@@ -9,29 +9,26 @@
         body { font-family: sans-serif; padding: 20px; }
         .container { max-width: 400px; margin: auto; }
         .form-group { margin-bottom: 15px; }
-        button { padding: 10px 20px; background-color: #00B900; color: white; border: none; border-radius: 5px; width: 100%; font-size: 16px; cursor: pointer; }
-        input[type="number"] { width: 90%; padding: 8px; }
+        button { padding: 12px; background-color: #00B900; color: white; border: none; border-radius: 5px; width: 100%; font-size: 16px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>รายงานราคา & สุขภาพหุ้น</h2>
+        <h2>ระบบเช็คหุ้น</h2>
         
         <div class="form-group">
-            <label><input type="radio" name="assetType" value="gold" checked onclick="toggleInput()"> ราคาทองคำ</label><br>
-            <label><input type="radio" name="assetType" value="stock" onclick="toggleInput()"> ราคาหุ้นรายตัว</label><br>
-            <label><input type="radio" name="assetType" value="health" onclick="toggleInput()"> 🏥 เช็คสุขภาพหุ้น (ปันผล/งบ)</label>
+            <label><input type="radio" name="assetType" value="health" checked onclick="toggleInput()"> 🏥 เช็คสุขภาพหุ้น (รายตัว)</label><br>
+            <label><input type="radio" name="assetType" value="portfolio" onclick="toggleInput()"> 📊 เช็คหุ้นทั้งพอร์ต</label>
         </div>
 
-        <div id="stockDetails" style="display: none;">
-            <div class="form-group">
-                <label for="stockName">ชื่อหุ้น:</label>
-                <input type="text" id="stockName" list="stockList" placeholder="เช่น TISCO, BAM, PTT" style="width: 90%; padding: 8px; text-transform: uppercase;">
-            </div>
-            <div class="form-group" id="payoutGroup" style="display: none;">
-                <label for="payoutRatio">อัตราการจ่ายปันผล (Payout Ratio %):</label>
-                <input type="number" id="payoutRatio" value="80" step="1">
-            </div>
+        <div id="inputSection" class="form-group">
+            <label id="labelName">ชื่อหุ้น:</label>
+            <input type="text" id="stockInput" value="SCB,AP,BAM,NEO,SNNP" style="width: 90%; padding: 8px; text-transform: uppercase;">
+        </div>
+
+        <div class="form-group" id="payoutSection">
+            <label>Payout Ratio (%):</label>
+            <input type="number" id="payoutRatio" value="80" style="width: 90%; padding: 8px;">
         </div>
 
         <button onclick="sendFlexMessage()">ส่งข้อความเข้าแชท</button>
@@ -40,86 +37,65 @@
     <script>
         const LIFF_ID = "2011085564-YWiDl1zG"; 
 
-        async function initializeLiff() {
-            try {
-                await liff.init({ liffId: LIFF_ID });
-            } catch (err) { console.error(err); }
-        }
+        async function initializeLiff() { await liff.init({ liffId: LIFF_ID }); }
 
         function toggleInput() {
             const type = document.querySelector('input[name="assetType"]:checked').value;
-            document.getElementById('stockDetails').style.display = (type !== 'gold' && type !== 'portfolio') ? 'block' : 'none';
-            document.getElementById('payoutGroup').style.display = (type === 'health') ? 'block' : 'none';
+            document.getElementById('payoutSection').style.display = (type === 'health') ? 'block' : 'none';
         }
 
-        async function fetchStockHealth(name, payoutPercent) {
+        async function fetchStockData(symbol, payoutPercent) {
             try {
                 const tvUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://scanner.tradingview.com/thailand/scan');
                 const response = await fetch(tvUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        "symbols": { "tickers": [`SET:${name.toUpperCase()}`] },
+                        "symbols": { "tickers": [`SET:${symbol.toUpperCase()}`] },
                         "columns": ["close", "price_earnings_ttm", "earnings_per_share_basic_ttm", "dividend_yield_recent"]
                     })
                 });
-
                 const data = await response.json();
-                if (!data.data || data.data.length === 0) throw new Error("ไม่พบข้อมูลหุ้น");
-
+                if (!data.data || data.data.length === 0) throw new Error(`${symbol}: ไม่พบข้อมูล`);
+                
                 const stats = data.data[0].d;
                 const price = stats[0] || 0;
-                const pe = stats[1] !== null ? stats[1].toFixed(2) : "N/A";
-                const eps = stats[2] !== null ? stats[2] : null;
-                const yieldPercent = stats[3] || 0;
-
+                const eps = stats[2] || 0;
+                const yieldP = stats[3] || 0;
                 const payoutRatio = payoutPercent / 100;
-                let estDPS = (eps !== null && eps > 0) ? (eps * payoutRatio).toFixed(2) + " ฿" : "0.00 ฿";
-                let estYield = (eps !== null && eps > 0 && price > 0) ? (((eps * payoutRatio) / price) * 100).toFixed(2) + "%" : "0.00%";
+                
+                const estDPS = (eps > 0) ? (eps * payoutRatio).toFixed(2) : "0.00";
+                const estYield = (price > 0) ? (((eps * payoutRatio) / price) * 100).toFixed(2) : "0.00";
 
-                return [
-                    {
-                        title: `Valuation (${name.toUpperCase()})`, headerBgColor: "#5E35B1", headerFontColor: "#FFFFFF",
-                        items: [
-                            { label: "ราคาปัจจุบัน :", value: `${price.toFixed(2)} ฿`, color: "#333333", size: "md" },
-                            { label: "P/E Ratio :", value: pe, color: "#1DB446", size: "md" },
-                            { label: "กำไร/หุ้น (EPS) :", value: eps !== null ? `${eps.toFixed(2)} ฿` : "N/A", color: "#666666", size: "md" }
-                        ], footer: "ประเมินความถูกแพงและกำไรของธุรกิจ"
-                    },
-                    {
-                        title: `ปันผล & ประมาณการ (${name.toUpperCase()})`, headerBgColor: "#0288D1", headerFontColor: "#FFFFFF",
-                        items: [
-                            { label: "% ปันผล (อดีต) :", value: `${yieldPercent.toFixed(2)}%`, color: "#666666", size: "md" },
-                            { label: "% ปันผล (คาดการณ์):", value: estYield, color: "#1DB446", size: "md" },
-                            { label: "ปันผลคาดการณ์/หุ้น:", value: estDPS, color: "#333333", size: "md" }
-                        ], footer: `คาดการณ์จาก EPS ปัจจุบัน (Payout ${payoutPercent}%)`
-                    }
-                ];
-            } catch (err) {
-                return [{ title: "Error", headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ:", value: err.message, color: "#FF334B", size: "md" }], footer: "-" }];
-            }
+                return {
+                    title: symbol.toUpperCase(),
+                    headerBgColor: "#00B900",
+                    items: [
+                        { l: "ราคาปัจจุบัน", v: `${price.toFixed(2)} ฿` },
+                        { l: "EPS", v: `${eps.toFixed(2)} ฿` },
+                        { l: "ปันผล(อดีต)", v: `${yieldP.toFixed(2)}%` },
+                        { l: "ปันผลคาดการณ์", v: `${estYield}% (${estDPS} ฿)` }
+                    ]
+                };
+            } catch (e) { return { title: symbol.toUpperCase(), headerBgColor: "#FF334B", items: [{l: "สถานะ", v: "Error"}] }; }
         }
 
         async function sendFlexMessage() {
             const type = document.querySelector('input[name="assetType"]:checked').value;
-            const stockName = document.getElementById('stockName').value;
+            const inputVal = document.getElementById('stockInput').value;
             const payout = document.getElementById('payoutRatio').value;
+            const symbols = inputVal.split(',').map(s => s.trim());
 
-            if (type === 'health') {
-                if (!stockName) { alert("กรุณาใส่ชื่อหุ้น"); return; }
-                const cards = await fetchStockHealth(stockName, payout);
-                await liff.sendMessages([{ type: "flex", altText: "สุขภาพหุ้น", contents: { type: "carousel", contents: cards.map(c => createBubble(c)) } }]);
-                liff.closeWindow();
-            }
-        }
-
-        function createBubble(data) {
-            return {
+            const results = await Promise.all(symbols.map(s => fetchStockData(s, payout)));
+            
+            const contents = results.map(data => ({
                 type: "bubble", size: "mega",
-                header: { type: "box", layout: "vertical", backgroundColor: data.headerBgColor, paddingAll: "md", contents: [{ type: "text", text: data.title, color: data.headerFontColor, weight: "bold" }] },
-                body: { type: "box", layout: "vertical", contents: data.items.map(i => ({ type: "box", layout: "horizontal", contents: [{ type: "text", text: i.label, color: "#666666", size: "sm", flex: 6 }, { type: "text", text: i.value, weight: "bold", color: i.color, align: "end", size: "sm", flex: 4 }] })) },
-                footer: { type: "box", layout: "vertical", contents: [{ type: "text", text: data.footer, size: "xxs", color: "#999999", align: "center" }] }
-            };
+                header: { type: "box", layout: "vertical", backgroundColor: data.headerBgColor, paddingAll: "md", contents: [{ type: "text", text: data.title, color: "#FFFFFF", weight: "bold" }] },
+                body: { type: "box", layout: "vertical", contents: data.items.map(i => ({ type: "box", layout: "horizontal", contents: [{ type: "text", text: i.l, size: "sm", color: "#666666" }, { type: "text", text: i.v, size: "sm", weight: "bold", align: "end" }] })) }
+            }));
+
+            await liff.sendMessages([{ type: "flex", altText: "รายงานหุ้น", contents: { type: "carousel", contents } }]);
+            liff.closeWindow();
         }
         initializeLiff();
     </script>
