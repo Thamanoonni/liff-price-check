@@ -25,7 +25,7 @@
 
         <div class="form-group" id="stockInputGroup" style="display: none;">
             <label for="stockName">ชื่อหุ้น:</label>
-            <input type="text" id="stockName" list="stockList" placeholder="เช่น TISCO, SCB, BAM" style="width: 100%; padding: 8px; text-transform: uppercase;">
+            <input type="text" id="stockName" list="stockList" placeholder="เช่น TISCO, SCB, NEO" style="width: 100%; padding: 8px; text-transform: uppercase;">
             <datalist id="stockList">
                 <option value="TISCO"></option>
                 <option value="SCB"></option>
@@ -55,7 +55,6 @@
 
         function toggleInput() {
             const type = document.querySelector('input[name="assetType"]:checked').value;
-            // แสดงช่องพิมพ์ชื่อหุ้น ตอนเลือก "ราคาหุ้นรายตัว" หรือ "เช็คสุขภาพหุ้น"
             document.getElementById('stockInputGroup').style.display = (type === 'stock' || type === 'health') ? 'block' : 'none';
         }
 
@@ -72,9 +71,7 @@
                     const currentDate = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
                     
                     return { 
-                        title: "ราคาทองคำแท่ง", 
-                        headerBgColor: "#FFB000", 
-                        headerFontColor: "#FFFFFF", 
+                        title: "ราคาทองคำแท่ง", headerBgColor: "#FFB000", headerFontColor: "#FFFFFF", 
                         items: [
                             { label: "ขายออก :", value: goldSell, color: "#333333", size: "xxl" },
                             { label: "รับซื้อ :", value: goldBuy, color: "#333333", size: "xxl" }
@@ -108,9 +105,7 @@
                     const color = change > 0 ? "#1DB446" : (change < 0 ? "#FF334B" : "#999999");
                     
                     return { 
-                        title: `ราคาหุ้น ${name.toUpperCase()}`, 
-                        headerBgColor: "#1DB446", 
-                        headerFontColor: "#FFFFFF", 
+                        title: `ราคาหุ้น ${name.toUpperCase()}`, headerBgColor: "#1DB446", headerFontColor: "#FFFFFF", 
                         items: [
                             { label: "ราคาล่าสุด :", value: `${currentPrice.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
                             { label: "เปลี่ยนแปลง :", value: changeText, color: color, size: "md" },
@@ -124,7 +119,7 @@
             }
         }
 
-        // 2. ดึงข้อมูลสุขภาพหุ้น (ปันผล + งบการเงิน)
+        // 2. ดึงข้อมูลสุขภาพหุ้น (ปันผล + งบการเงิน) - แก้ไขเอา Alert ออกแล้ว
         async function fetchStockHealth(name) {
             try {
                 const symbol = name.toUpperCase() + '.BK';
@@ -134,9 +129,8 @@
                 const response = await fetch(proxyUrl);
                 const data = await response.json();
 
-                // 🚨 เพิ่มการเช็คข้อมูลตรงนี้: ถ้าโครงสร้างข้อมูลไม่มี result ให้โยน Error ทันที
                 if (!data.quoteSummary || data.quoteSummary.error || !data.quoteSummary.result) {
-                    throw new Error("ไม่มีข้อมูลสถิติ/งบการเงินบน Yahoo Finance");
+                    throw new Error("ไม่มีข้อมูลงบการเงินบน Yahoo");
                 }
 
                 const result = data.quoteSummary.result[0];
@@ -145,11 +139,9 @@
                 const financial = result.financialData || {};
                 const calendar = result.calendarEvents || {};
 
-                // แปลงค่าต่าง ๆ
                 const price = financial.currentPrice?.raw || summary.previousClose?.raw || 0;
                 const yieldVal = summary.dividendYield?.raw ? (summary.dividendYield.raw * 100).toFixed(2) + "%" : (summary.trailingAnnualDividendYield?.raw ? (summary.trailingAnnualDividendYield.raw * 100).toFixed(2) + "%" : "N/A");
                 
-                // แปลงวันที่ XD
                 let xdDateText = "N/A";
                 if (calendar.exDividendDate?.raw) {
                     xdDateText = new Date(calendar.exDividendDate.raw * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
@@ -163,55 +155,41 @@
                 const roe = financial.returnOnEquity?.fmt ? (financial.returnOnEquity.raw * 100).toFixed(2) + "%" : "N/A";
                 const de = financial.debtToEquity?.fmt || "N/A";
 
-                // การ์ดใบที่ 1: ปันผล & Valuation
                 const card1 = {
-                    title: `ปันผล & Valuation (${name.toUpperCase()})`,
-                    headerBgColor: "#0288D1",
-                    headerFontColor: "#FFFFFF",
+                    title: `ปันผล & Valuation (${name.toUpperCase()})`, headerBgColor: "#0288D1", headerFontColor: "#FFFFFF",
                     items: [
                         { label: "ราคาปัจจุบัน :", value: `${price.toFixed(2)} ฿`, color: "#333333", size: "xl" },
                         { label: "% ปันผล (Yield) :", value: yieldVal, color: "#1DB446", size: "xl" },
                         { label: "วัน XD ล่าสุด :", value: xdDateText, color: "#0288D1", size: "md" },
                         { label: "P/E Ratio :", value: pe, color: "#666666", size: "md" },
                         { label: "P/BV Ratio :", value: pbv, color: "#666666", size: "md" }
-                    ],
-                    footer: "ข้อมูลสถิติจาก Yahoo Finance"
+                    ], footer: "ข้อมูลสถิติจาก Yahoo Finance"
                 };
 
-                // การ์ดใบที่ 2: ปัจจัยพื้นฐาน & งบ
                 const card2 = {
-                    title: `งบการเงิน (${name.toUpperCase()})`,
-                    headerBgColor: "#5E35B1",
-                    headerFontColor: "#FFFFFF",
+                    title: `งบการเงิน (${name.toUpperCase()})`, headerBgColor: "#5E35B1", headerFontColor: "#FFFFFF",
                     items: [
                         { label: "กำไร/หุ้น (EPS) :", value: `${eps} ฿`, color: "#333333", size: "xl" },
                         { label: "ROE (%) :", value: roe, color: "#1DB446", size: "xl" },
                         { label: "หนี้สิน/ทุน (D/E) :", value: de, color: "#666666", size: "md" },
                         { label: "สถานะหุ้น :", value: "พร้อมวิเคราะห์ปันผล", color: "#5E35B1", size: "md" }
-                    ],
-                    footer: "ประเมินจังหวะสะสมสะท้อนมูลค่าหุ้น"
+                    ], footer: "ประเมินจังหวะสะสมสะท้อนมูลค่าหุ้น"
                 };
 
                 return [card1, card2];
 
             } catch (error) {
-                // เปลี่ยนจากการเด้ง Alert น่ารำคาญ เป็นการคืนค่าการ์ดสีแดงกลับไปแสดงใน LINE
+                // คืนค่าเป็นการ์ดสีแดงแทนการเด้ง Alert
                 return [{ 
-                    title: `ไม่พบงบการเงิน ${name.toUpperCase()}`, 
-                    headerBgColor: "#FF334B", 
-                    headerFontColor: "#FFFFFF", 
-                    items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "xs" }], 
-                    footer: "-" 
+                    title: `ไม่พบข้อมูล ${name.toUpperCase()}`, headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", 
+                    items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "xs" }], footer: "-" 
                 }];
             }
         }
 
-        // ฟังก์ชันสร้าง Flex Bubble
         function createFlexBubble(data) {
             const bodyContents = data.items.map(item => ({
-                type: "box",
-                layout: "horizontal",
-                margin: "md",
+                type: "box", layout: "horizontal", margin: "md",
                 contents: [
                     { type: "text", text: item.label, size: item.size === "xxl" ? "xl" : item.size, color: "#666666", flex: 5, gravity: "center" },
                     { type: "text", text: item.value, size: item.size, weight: "bold", color: item.color, align: "end", flex: 5, adjustMode: "shrink-to-fit", gravity: "center" }
@@ -223,22 +201,9 @@
             }
 
             return {
-                type: "bubble",
-                size: "mega",
-                header: {
-                    type: "box",
-                    layout: "vertical",
-                    backgroundColor: data.headerBgColor,
-                    paddingAll: "lg",
-                    contents: [
-                        { type: "text", text: data.title, weight: "bold", size: "lg", color: data.headerFontColor }
-                    ]
-                },
-                body: {
-                    type: "box",
-                    layout: "vertical",
-                    contents: bodyContents
-                }
+                type: "bubble", size: "mega",
+                header: { type: "box", layout: "vertical", backgroundColor: data.headerBgColor, paddingAll: "lg", contents: [{ type: "text", text: data.title, weight: "bold", size: "lg", color: data.headerFontColor }] },
+                body: { type: "box", layout: "vertical", contents: bodyContents }
             };
         }
 
@@ -281,7 +246,7 @@
                     alert("ฟังก์ชันนี้ต้องเปิดผ่านแอป LINE เท่านั้น");
                 }
             } catch (error) {
-                alert("เกิดข้อผิดพลาดในการส่งข้อความ");
+                alert("เกิดข้อผิดพลาดในการส่งข้อความ กรุณาลองใหม่");
             }
         }
 
