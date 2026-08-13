@@ -119,77 +119,75 @@
             }
         }
 
-        // 2. ดึงข้อมูลสุขภาพหุ้น (Hybrid: ราคาจาก Yahoo v8, สถิติจาก Google Finance)
+        // 2. ดึงข้อมูลสุขภาพหุ้น (เปลี่ยนมาใช้ TradingView API เพื่อความเสถียร 100%)
         async function fetchStockHealth(name) {
             try {
-                const symbolYahoo = name.toUpperCase() + '.BK';
-                const symbolGoogle = name.toUpperCase() + ':BKK';
+                const symbol = name.toUpperCase();
                 
-                // --- ส่วนที่ 1: ดึงราคาปัจจุบันจาก Yahoo v8 (เสถียรสุด ไม่ติดบล็อก) ---
-                const targetUrlYahoo = `https://query2.finance.yahoo.com/v8/finance/chart/${symbolYahoo}`;
-                const proxyYahoo = `https://corsproxy.io/?${encodeURIComponent(targetUrlYahoo)}`;
+                // TradingView Scanner API (ไม่มีบล็อก CORS ไม่ต้องพึ่ง Proxy)
+                const tvUrl = 'https://scanner.tradingview.com/thailand/scan';
+                const response = await fetch(tvUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        "symbols": {
+                            "tickers": [`SET:${symbol}`]
+                        },
+                        "columns": [
+                            "close",
+                            "price_earnings_ttm",
+                            "earnings_per_share_basic_ttm",
+                            "dividend_yield_recent",
+                            "High.52",
+                            "Low.52"
+                        ]
+                    })
+                });
+
+                if (!response.ok) throw new Error("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ข้อมูลได้");
                 
-                const resYahoo = await fetch(proxyYahoo);
-                const dataYahoo = await resYahoo.json();
+                const data = await response.json();
                 
-                if (dataYahoo.chart && dataYahoo.chart.error) {
-                    throw new Error("ไม่พบข้อมูลหุ้นในระบบ");
+                // เช็คว่ามีหุ้นตัวนี้ในตลาดหรือไม่
+                if (!data.data || data.data.length === 0) {
+                    throw new Error("ไม่พบชื่อหุ้นในระบบ");
                 }
+
+                // ดึง Array ข้อมูลออกมาตามลำดับ Columns ที่เราระบุไว้
+                const stats = data.data[0].d;
                 
-                const price = dataYahoo.chart.result[0].meta.regularMarketPrice;
-
-                // --- ส่วนที่ 2: ดึงสถิติปันผล/งบ จาก Google Finance ---
-                let pe = "N/A", yieldVal = "N/A", eps = "N/A", range52 = "N/A";
-                
-                try {
-                    // ใช้ hl=en บังคับเมนูภาษาอังกฤษ จะได้ดักจับคำว่า P/E ratio และ Dividend yield ได้แม่นยำ
-                    const targetUrlGoogle = `https://www.google.com/finance/quote/${symbolGoogle}?hl=en`;
-                    const proxyGoogle = `https://corsproxy.io/?${encodeURIComponent(targetUrlGoogle)}`;
-                    
-                    const resGoogle = await fetch(proxyGoogle);
-                    const html = await resGoogle.text();
-
-                    // ฟังก์ชันแกะค่าสถิติจากโครงสร้าง HTML
-                    const extractStat = (label) => {
-                        const regex = new RegExp(`>${label}<\\/div>\\s*<div[^>]*>(.*?)<\\/div>`, 'i');
-                        const match = html.match(regex);
-                        // ลบแท็ก HTML ที่อาจซ้อนอยู่ทิ้งไปให้เหลือแต่ตัวเลข
-                        return match ? match[1].replace(/<[^>]*>?/gm, '').trim() : "N/A";
-                    };
-
-                    pe = extractStat("P/E ratio");
-                    yieldVal = extractStat("Dividend yield");
-                    eps = extractStat("Earnings per share");
-                    range52 = extractStat("52-week range");
-                    
-                } catch (e) {
-                    console.log("Scrape stats error, fallback to N/A");
-                }
+                // ตรวจสอบค่า null ถ้าไม่มีข้อมูลให้แสดง N/A เพื่อป้องกัน Error
+                const price = stats[0] !== null ? stats[0].toFixed(2) : "N/A";
+                const pe = stats[1] !== null ? stats[1].toFixed(2) : "N/A";
+                const eps = stats[2] !== null ? stats[2].toFixed(2) : "N/A";
+                const yieldVal = stats[3] !== null ? stats[3].toFixed(2) + "%" : "N/A";
+                const high52 = stats[4] !== null ? stats[4].toFixed(2) : "N/A";
+                const low52 = stats[5] !== null ? stats[5].toFixed(2) : "N/A";
 
                 // การ์ดใบที่ 1: Valuation
                 const card1 = {
-                    title: `Valuation (${name.toUpperCase()})`,
+                    title: `Valuation (${symbol})`,
                     headerBgColor: "#5E35B1",
                     headerFontColor: "#FFFFFF",
                     items: [
-                        { label: "ราคาปัจจุบัน :", value: `${price.toFixed(2)} ฿`, color: "#333333", size: "xl" },
+                        { label: "ราคาปัจจุบัน :", value: `${price} ฿`, color: "#333333", size: "xl" },
                         { label: "P/E Ratio :", value: pe, color: "#1DB446", size: "xl" },
-                        { label: "กำไร/หุ้น (EPS) :", value: eps, color: "#666666", size: "md" }
+                        { label: "กำไร/หุ้น (EPS) :", value: eps !== "N/A" ? `${eps} ฿` : "N/A", color: "#666666", size: "md" }
                     ],
                     footer: "ประเมินความถูกแพงและกำไรของธุรกิจ"
                 };
 
                 // การ์ดใบที่ 2: ข้อมูลปันผล & สถิติ
                 const card2 = {
-                    title: `ปันผล & สถิติ (${name.toUpperCase()})`,
+                    title: `ปันผล & สถิติ (${symbol})`,
                     headerBgColor: "#0288D1",
                     headerFontColor: "#FFFFFF",
                     items: [
                         { label: "% ปันผล (Yield) :", value: yieldVal, color: "#1DB446", size: "xl" },
-                        { label: "กรอบราคา 52w :", value: range52, color: "#666666", size: "md" },
-                        { label: "สถานะ :", value: yieldVal !== "N/A" ? "พบข้อมูลพื้นฐาน" : "ไม่พบข้อมูลสถิติ", color: "#0288D1", size: "xs" }
+                        { label: "กรอบราคา 52w :", value: (low52 !== "N/A" && high52 !== "N/A") ? `${low52} - ${high52}` : "N/A", color: "#666666", size: "md" },
+                        { label: "สถานะ :", value: "ดึงข้อมูลสำเร็จ", color: "#0288D1", size: "xs" }
                     ],
-                    footer: "ราคาจาก Yahoo / สถิติจาก Google"
+                    footer: "ข้อมูลอ้างอิงจาก TradingView"
                 };
 
                 return [card1, card2];
