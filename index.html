@@ -88,22 +88,19 @@
                     return { title: "ราคาทองคำแท่ง", headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ไม่สามารถดึงข้อมูลได้", color: "#FF334B", size: "xl" }], footer: "-" };
                 }
             } else {
-                // ดึงราคาหุ้นผ่าน Yahoo Finance Quote API v7 (เบาและเสถียรกว่า)
+                // ดึงราคาหุ้นผ่าน API ส่วนตัวที่สร้างด้วย Google Apps Script
                 try {
-                    const symbol = name.toUpperCase() + '.BK';
-                    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-                    // ใช้ Proxy แบบ GET 
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                    const symbol = name.toUpperCase();
                     
-                    const response = await fetch(proxyUrl);
-                    const proxyData = await response.json();
+                    // ⚠️ นำ URL ของ Web App ที่คัดลอกไว้ มาวางแทนข้อความด้านล่างนี้ 
+                    // อย่าลืมเก็บ ?symbol=${symbol} ต่อท้ายไว้เหมือนเดิมนะครับ
+                    const gasUrl = `https://script.google.com/macros/s/AKfycbydHpb-zOdY6KXkf7nDJNZMAZ4_upKWQzrUbs0K41lj2FX9NT7mfdjbQ1t94SL_fA7j/exec?symbol=${symbol}`;
                     
-                    if (!proxyData.contents) throw new Error("Proxy ตอบกลับผิดพลาด");
+                    const response = await fetch(gasUrl);
+                    const data = await response.json();
                     
-                    const data = JSON.parse(proxyData.contents);
                     const result = data.quoteResponse.result[0];
-                    
-                    if (!result) throw new Error("ไม่พบข้อมูลหุ้นในระบบ");
+                    if (!result) throw new Error("ไม่พบข้อมูลหุ้น");
                     
                     const currentPrice = result.regularMarketPrice;
                     const change = result.regularMarketChange;
@@ -113,7 +110,7 @@
                     const color = change > 0 ? "#1DB446" : (change < 0 ? "#FF334B" : "#999999");
                     
                     return { 
-                        title: `ราคาหุ้น ${name.toUpperCase()}`, 
+                        title: `ราคาหุ้น ${symbol}`, 
                         headerBgColor: "#1DB446", 
                         headerFontColor: "#FFFFFF", 
                         items: [
@@ -124,7 +121,7 @@
                         footer: "-"
                     };
                 } catch (error) {
-                    console.error("Yahoo API Error:", error);
+                    console.error("Stock API Error:", error);
                     return { 
                         title: `ไม่พบหุ้น ${name.toUpperCase()}`, 
                         headerBgColor: "#FF334B", 
