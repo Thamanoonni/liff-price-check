@@ -119,16 +119,23 @@
             }
         }
 
-        // 2. ดึงข้อมูลสุขภาพหุ้น (เปลี่ยนมาใช้ TradingView API เพื่อความเสถียร 100%)
+        // 2. ดึงข้อมูลสุขภาพหุ้น (TradingView API + Proxy แก้ Failed to fetch)
         async function fetchStockHealth(name) {
             try {
                 const symbol = name.toUpperCase();
                 
-                // TradingView Scanner API (ไม่มีบล็อก CORS ไม่ต้องพึ่ง Proxy)
+                // URL ของ TradingView
                 const tvUrl = 'https://scanner.tradingview.com/thailand/scan';
-                const response = await fetch(tvUrl, {
+                
+                // 🚨 นำ Proxy มาครอบ URL เพื่อทะลุการบล็อก CORS ของเบราว์เซอร์ LINE
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(tvUrl)}`;
+
+                const response = await fetch(proxyUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
                     body: JSON.stringify({
                         "symbols": {
                             "tickers": [`SET:${symbol}`]
@@ -153,10 +160,10 @@
                     throw new Error("ไม่พบชื่อหุ้นในระบบ");
                 }
 
-                // ดึง Array ข้อมูลออกมาตามลำดับ Columns ที่เราระบุไว้
+                // ดึง Array ข้อมูลออกมาตามลำดับ
                 const stats = data.data[0].d;
                 
-                // ตรวจสอบค่า null ถ้าไม่มีข้อมูลให้แสดง N/A เพื่อป้องกัน Error
+                // ตรวจสอบค่า null ถ้าไม่มีข้อมูลให้แสดง N/A
                 const price = stats[0] !== null ? stats[0].toFixed(2) : "N/A";
                 const pe = stats[1] !== null ? stats[1].toFixed(2) : "N/A";
                 const eps = stats[2] !== null ? stats[2].toFixed(2) : "N/A";
