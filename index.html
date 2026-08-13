@@ -1,4 +1,65 @@
-// ฟังก์ชันดึงข้อมูลราคาของจริงผ่าน API
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบเช็คราคา</title>
+    <!-- นำเข้า LIFF SDK -->
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .container { max-width: 400px; margin: auto; }
+        .form-group { margin-bottom: 15px; }
+        button { padding: 10px 20px; background-color: #00B900; color: white; border: none; border-radius: 5px; width: 100%; font-size: 16px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>รายงานราคา</h2>
+        
+        <div class="form-group">
+            <label><input type="radio" name="assetType" value="gold" checked onclick="toggleInput()"> ราคาทองคำ</label><br>
+            <label><input type="radio" name="assetType" value="stock" onclick="toggleInput()"> ราคาหุ้น</label>
+        </div>
+
+        <div class="form-group" id="stockInputGroup" style="display: none;">
+            <label for="stockName">ชื่อหุ้น:</label>
+            <input type="text" id="stockName" list="stockList" placeholder="เช่น TISCO, SCB, BAM" style="width: 100%; padding: 8px; text-transform: uppercase;">
+            <datalist id="stockList">
+                <option value="TISCO"></option>
+                <option value="SCB"></option>
+                <option value="BAM"></option>
+                <option value="NEO"></option>
+                <option value="AP"></option>
+            </datalist>
+        </div>
+
+        <button onclick="sendFlexMessage()">ส่งข้อความเข้าแชท</button>
+    </div>
+
+    <script>
+        // LIFF ID ของคุณ
+        const LIFF_ID = "2011085564-YWiDl1zG"; 
+
+        // เริ่มต้นการทำงานของ LIFF
+        async function initializeLiff() {
+            try {
+                await liff.init({ liffId: LIFF_ID });
+                if (!liff.isLoggedIn()) {
+                    liff.login();
+                }
+            } catch (err) {
+                console.error("LIFF Initialization failed", err);
+            }
+        }
+
+        // ซ่อน/แสดง ช่องใส่ชื่อหุ้น
+        function toggleInput() {
+            const isStock = document.querySelector('input[name="assetType"]:checked').value === 'stock';
+            document.getElementById('stockInputGroup').style.display = isStock ? 'block' : 'none';
+        }
+
+        // ฟังก์ชันดึงข้อมูลราคาของจริงผ่าน API
         async function fetchPriceData(type, name) {
             if (type === 'gold') {
                 // ดึงราคาทองจาก API สมาคมค้าทองคำ
@@ -19,10 +80,10 @@
                         line2: `รับซื้อ : ${goldBuy}`,
                         line3: `อัปเดต : ${currentDate} เวลา ${apiTime}`,
                         color: "#FFB000",
-                        size1: "xxl", // แก้ไขจาก 2xl เป็น xxl
-                        size2: "xxl", // แก้ไขจาก 2xl เป็น xxl
-                        weight2: "bold", 
-                        color2: "#333333" 
+                        size1: "2xl", // ปรับขนาดให้เล็กลงจาก 3xl เป็น 2xl
+                        size2: "2xl", // ให้ขนาดเท่ากับบรรทัดแรก
+                        weight2: "bold", // ทำให้เป็นตัวหนาเหมือนบรรทัดแรก
+                        color2: "#333333" // สีข้อความเข้มขึ้น
                     };
                 } catch (error) {
                     console.error("Gold API Error:", error);
@@ -57,7 +118,7 @@
                         line2: `เปลี่ยนแปลง : ${sign}${Math.abs(change).toFixed(2)}`,
                         line3: `คิดเป็น : ${sign}${Math.abs(percentChange)}%`,
                         color: color,
-                        size1: "xxl", // แก้ไขจาก 2xl เป็น xxl
+                        size1: "xxl", 
                         size2: "md", 
                         weight2: "regular",
                         color2: "#666666"
@@ -68,3 +129,55 @@
                 }
             }
         }
+
+        // ฟังก์ชันสร้างและส่ง Flex Message
+        async function sendFlexMessage() {
+            const type = document.querySelector('input[name="assetType"]:checked').value;
+            const stockName = document.getElementById('stockName').value;
+
+            if (type === 'stock' && !stockName) {
+                alert("กรุณาใส่ชื่อหุ้น");
+                return;
+            }
+
+            // 1. ดึงข้อมูลราคา
+            const data = await fetchPriceData(type, stockName);
+
+            // 2. สร้างโครงสร้าง Flex Message (JSON) ที่ปรับการจัดวางใหม่
+            const flexJson = {
+                type: "flex",
+                altText: `รายงาน${data.title}`,
+                contents: {
+                    type: "bubble",
+                    body: {
+                        type: "box",
+                        layout: "vertical",
+                        contents: [
+                            { type: "text", text: data.title, weight: "bold", size: "xl", color: data.color || "#1DB446" },
+                            { type: "text", text: data.line1, size: data.size1, weight: "bold", color: "#333333", margin: "md", adjustMode: "shrink-to-fit" },
+                            { type: "text", text: data.line2, size: data.size2, weight: data.weight2, color: data.color2, margin: "sm", adjustMode: "shrink-to-fit" },
+                            { type: "text", text: data.line3, size: "xs", color: "#999999", margin: "sm" }
+                        ]
+                    }
+                }
+            };
+
+            // 3. ส่งข้อความเข้าแชท
+            try {
+                if (liff.isInClient()) {
+                    await liff.sendMessages([flexJson]);
+                    liff.closeWindow(); // ปิดหน้าเว็บอัตโนมัติหลังจากส่งเสร็จ
+                } else {
+                    alert("ฟังก์ชันนี้ต้องเปิดผ่านแอป LINE เท่านั้น");
+                }
+            } catch (error) {
+                console.error("Error sending message:", error);
+                alert("เกิดข้อผิดพลาดในการส่งข้อความ");
+            }
+        }
+
+        // เรียกใช้งานตอนโหลดหน้าเว็บ
+        initializeLiff();
+    </script>
+</body>
+</html>
