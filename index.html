@@ -81,35 +81,41 @@
                     return { title: "ราคาทองคำแท่ง", headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "md" }], footer: "-" };
                 }
             } else {
+                // วิ่งตรงหา Yahoo API v8 โดยใช้ corsproxy.io เพื่อทะลุการบล็อกของ LINE
                 try {
-                    const symbol = name.toUpperCase();
+                    const symbol = name.toUpperCase() + '.BK';
+                    const targetUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}`;
                     
-                    // ลิงก์ Google Apps Script (ใส่ &ts= กัน Cache ด้วย)
-                    const gasUrl = `https://script.google.com/macros/s/AKfycbydHpb-zOdY6KXkf7nDJNZMAZ4_upKWQzrUbs0K41lj2FX9NT7mfdjbQ1t94SL_fA7j/exec?symbol=${symbol}&ts=${Date.now()}`;
-                    
-                    // ใช้ /get แทน /raw เพื่อให้ Proxy จัดการ Redirect ให้เสร็จสรรพ
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(gasUrl)}`;
+                    // เปลี่ยนมาใช้ Proxy ตัวใหม่ที่เสถียรกว่าและไม่ติด Redirect
+                    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
                     
                     const response = await fetch(proxyUrl);
-                    const proxyData = await response.json();
+                    const data = await response.json();
                     
-                    if (!proxyData.contents) throw new Error("Proxy ไม่ตอบสนอง");
+                    if (data.chart && data.chart.error) {
+                        throw new Error(data.chart.error.description || "ไม่พบข้อมูลหุ้น");
+                    }
                     
-                    // ถอดรหัส JSON ที่ Proxy ดึงมาจาก Google อีกที
-                    const data = JSON.parse(proxyData.contents);
+                    const meta = data.chart.result[0].meta;
+                    const currentPrice = meta.regularMarketPrice;
+                    const previousClose = meta.chartPreviousClose;
                     
-                    if (data.status !== "success") throw new Error(data.message);
+                    const change = currentPrice - previousClose;
+                    const percentChange = (change / previousClose) * 100;
                     
-                    const color = data.sign === "+" ? "#1DB446" : (data.sign === "-" ? "#FF334B" : "#999999");
+                    const sign = change > 0 ? "+" : (change < 0 ? "-" : "");
+                    const changeText = sign + Math.abs(change).toFixed(2);
+                    const percentText = sign + Math.abs(percentChange).toFixed(2) + "%";
+                    const color = change > 0 ? "#1DB446" : (change < 0 ? "#FF334B" : "#999999");
                     
                     return { 
-                        title: `ราคาหุ้น ${symbol}`, 
+                        title: `ราคาหุ้น ${name.toUpperCase()}`, 
                         headerBgColor: "#1DB446", 
                         headerFontColor: "#FFFFFF", 
                         items: [
-                            { label: "ราคาล่าสุด :", value: `${data.price.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
-                            { label: "เปลี่ยนแปลง :", value: data.changeText, color: color, size: "md" },
-                            { label: "คิดเป็น :", value: data.percentText, color: color, size: "md" }
+                            { label: "ราคาล่าสุด :", value: `${currentPrice.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
+                            { label: "เปลี่ยนแปลง :", value: changeText, color: color, size: "md" },
+                            { label: "คิดเป็น :", value: percentText, color: color, size: "md" }
                         ],
                         footer: "-"
                     };
