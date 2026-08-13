@@ -119,70 +119,79 @@
             }
         }
 
-        // 2. ดึงข้อมูลสุขภาพหุ้น (ปันผล + งบการเงิน) - แก้ไขเอา Alert ออกแล้ว
+        // 2. ดึงข้อมูลสุขภาพหุ้น (แก้ปัญหา Yahoo บล็อก โดยใช้ v7 API แทน)
         async function fetchStockHealth(name) {
             try {
                 const symbol = name.toUpperCase() + '.BK';
-                const targetUrl = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=summaryDetail,defaultKeyStatistics,financialData,calendarEvents`;
+                // เปลี่ยนมาใช้ v7/quote ซึ่งเสถียรและไม่ค่อยโดนบล็อกเหมือน v10
+                const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
                 const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
                 const response = await fetch(proxyUrl);
                 const data = await response.json();
 
-                if (!data.quoteSummary || data.quoteSummary.error || !data.quoteSummary.result) {
-                    throw new Error("ไม่มีข้อมูลงบการเงินบน Yahoo");
+                // เช็คว่ามีข้อมูลส่งกลับมาหรือไม่
+                if (!data.quoteResponse || !data.quoteResponse.result || data.quoteResponse.result.length === 0) {
+                    throw new Error("ไม่มีข้อมูลงบการเงินบนระบบ");
                 }
 
-                const result = data.quoteSummary.result[0];
-                const summary = result.summaryDetail || {};
-                const stats = result.defaultKeyStatistics || {};
-                const financial = result.financialData || {};
-                const calendar = result.calendarEvents || {};
+                const result = data.quoteResponse.result[0];
 
-                const price = financial.currentPrice?.raw || summary.previousClose?.raw || 0;
-                const yieldVal = summary.dividendYield?.raw ? (summary.dividendYield.raw * 100).toFixed(2) + "%" : (summary.trailingAnnualDividendYield?.raw ? (summary.trailingAnnualDividendYield.raw * 100).toFixed(2) + "%" : "N/A");
+                const price = result.regularMarketPrice || 0;
+                
+                // คำนวณค่าต่างๆ จากข้อมูล v7
+                const yieldVal = result.trailingAnnualDividendYield ? (result.trailingAnnualDividendYield * 100).toFixed(2) + "%" : "N/A";
+                const divRate = result.trailingAnnualDividendRate ? `${result.trailingAnnualDividendRate.toFixed(2)} ฿` : "N/A";
                 
                 let xdDateText = "N/A";
-                if (calendar.exDividendDate?.raw) {
-                    xdDateText = new Date(calendar.exDividendDate.raw * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-                } else if (summary.exDividendDate?.raw) {
-                    xdDateText = new Date(summary.exDividendDate.raw * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+                if (result.dividendDate) {
+                    xdDateText = new Date(result.dividendDate * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
                 }
 
-                const pe = summary.trailingPE?.fmt || "N/A";
-                const pbv = stats.priceToBook?.fmt || "N/A";
-                const eps = stats.trailingEps?.fmt || "N/A";
-                const roe = financial.returnOnEquity?.fmt ? (financial.returnOnEquity.raw * 100).toFixed(2) + "%" : "N/A";
-                const de = financial.debtToEquity?.fmt || "N/A";
+                const pe = result.trailingPE ? result.trailingPE.toFixed(2) : "N/A";
+                const pbv = result.priceToBook ? result.priceToBook.toFixed(2) : "N/A";
+                const eps = result.epsTrailingTwelveMonths ? `${result.epsTrailingTwelveMonths.toFixed(2)} ฿` : "N/A";
+                
+                const high52 = result.fiftyTwoWeekHigh ? result.fiftyTwoWeekHigh.toFixed(2) : "N/A";
+                const low52 = result.fiftyTwoWeekLow ? result.fiftyTwoWeekLow.toFixed(2) : "N/A";
 
+                // การ์ดใบที่ 1: Valuation & งบการเงิน
                 const card1 = {
-                    title: `ปันผล & Valuation (${name.toUpperCase()})`, headerBgColor: "#0288D1", headerFontColor: "#FFFFFF",
+                    title: `Valuation (${name.toUpperCase()})`,
+                    headerBgColor: "#5E35B1",
+                    headerFontColor: "#FFFFFF",
                     items: [
                         { label: "ราคาปัจจุบัน :", value: `${price.toFixed(2)} ฿`, color: "#333333", size: "xl" },
-                        { label: "% ปันผล (Yield) :", value: yieldVal, color: "#1DB446", size: "xl" },
-                        { label: "วัน XD ล่าสุด :", value: xdDateText, color: "#0288D1", size: "md" },
-                        { label: "P/E Ratio :", value: pe, color: "#666666", size: "md" },
-                        { label: "P/BV Ratio :", value: pbv, color: "#666666", size: "md" }
-                    ], footer: "ข้อมูลสถิติจาก Yahoo Finance"
+                        { label: "P/E Ratio :", value: pe, color: "#1DB446", size: "xl" },
+                        { label: "P/BV Ratio :", value: pbv, color: "#666666", size: "md" },
+                        { label: "กำไร/หุ้น (EPS) :", value: eps, color: "#666666", size: "md" }
+                    ],
+                    footer: "ประเมินความถูกแพงและกำไรของธุรกิจ"
                 };
 
+                // การ์ดใบที่ 2: ข้อมูลปันผล & สถิติ
                 const card2 = {
-                    title: `งบการเงิน (${name.toUpperCase()})`, headerBgColor: "#5E35B1", headerFontColor: "#FFFFFF",
+                    title: `ปันผล & สถิติ (${name.toUpperCase()})`,
+                    headerBgColor: "#0288D1",
+                    headerFontColor: "#FFFFFF",
                     items: [
-                        { label: "กำไร/หุ้น (EPS) :", value: `${eps} ฿`, color: "#333333", size: "xl" },
-                        { label: "ROE (%) :", value: roe, color: "#1DB446", size: "xl" },
-                        { label: "หนี้สิน/ทุน (D/E) :", value: de, color: "#666666", size: "md" },
-                        { label: "สถานะหุ้น :", value: "พร้อมวิเคราะห์ปันผล", color: "#5E35B1", size: "md" }
-                    ], footer: "ประเมินจังหวะสะสมสะท้อนมูลค่าหุ้น"
+                        { label: "% ปันผล (Yield) :", value: yieldVal, color: "#1DB446", size: "xl" },
+                        { label: "ปันผลสะสม/ปี :", value: divRate, color: "#333333", size: "md" },
+                        { label: "วันจ่ายปันผล :", value: xdDateText, color: "#666666", size: "md" },
+                        { label: "กรอบราคา 52w :", value: `${low52} - ${high52}`, color: "#666666", size: "xs" }
+                    ],
+                    footer: "ข้อมูลอ้างอิงจาก Yahoo Finance"
                 };
 
                 return [card1, card2];
 
             } catch (error) {
-                // คืนค่าเป็นการ์ดสีแดงแทนการเด้ง Alert
                 return [{ 
-                    title: `ไม่พบข้อมูล ${name.toUpperCase()}`, headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", 
-                    items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "xs" }], footer: "-" 
+                    title: `ไม่พบข้อมูล ${name.toUpperCase()}`, 
+                    headerBgColor: "#FF334B", 
+                    headerFontColor: "#FFFFFF", 
+                    items: [{ label: "สถานะ :", value: "ดึงข้อมูลสถิติล้มเหลว", color: "#FF334B", size: "xs" }], 
+                    footer: "-" 
                 }];
             }
         }
