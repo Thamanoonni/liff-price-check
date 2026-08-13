@@ -69,20 +69,25 @@
                     
                     const goldBuy = data.response.price.gold_bar.buy;
                     const goldSell = data.response.price.gold_bar.sell;
-                    const apiDate = data.response.date;
                     const apiTime = data.response.update_time;
+                    
+                    // สร้างวันที่เองในรูปแบบสั้น (เช่น 13 ส.ค. 69)
+                    const currentDate = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
                     
                     return { 
                         title: "ราคาทองคำแท่ง", 
                         line1: `ขายออก : ${goldSell}`, 
                         line2: `รับซื้อ : ${goldBuy}`,
-                        line3: `อัปเดต : วันที่ ${apiDate} เวลา ${apiTime}`,
+                        line3: `อัปเดต : ${currentDate} เวลา ${apiTime}`,
                         color: "#FFB000",
-                        size1: "3xl"
+                        size1: "2xl", // ปรับขนาดให้เล็กลงจาก 3xl เป็น 2xl
+                        size2: "2xl", // ให้ขนาดเท่ากับบรรทัดแรก
+                        weight2: "bold", // ทำให้เป็นตัวหนาเหมือนบรรทัดแรก
+                        color2: "#333333" // สีข้อความเข้มขึ้น
                     };
                 } catch (error) {
                     console.error("Gold API Error:", error);
-                    return { title: "ราคาทองคำแท่ง", line1: "ไม่สามารถดึงข้อมูลได้", line2: "-", line3: "-", color: "#FF334B", size1: "xl" };
+                    return { title: "ราคาทองคำแท่ง", line1: "ไม่สามารถดึงข้อมูลได้", line2: "-", line3: "-", color: "#FF334B", size1: "xl", size2: "md", weight2: "regular", color2: "#666666" };
                 }
             } else {
                 // ดึงราคาหุ้นไทยผ่าน Yahoo Finance API และ Proxy
@@ -113,11 +118,14 @@
                         line2: `เปลี่ยนแปลง : ${sign}${Math.abs(change).toFixed(2)}`,
                         line3: `คิดเป็น : ${sign}${Math.abs(percentChange)}%`,
                         color: color,
-                        size1: "3xl"
+                        size1: "2xl", 
+                        size2: "md", 
+                        weight2: "regular",
+                        color2: "#666666"
                     };
                 } catch (error) {
                     console.error("Stock API Error:", error);
-                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, line1: "ไม่พบข้อมูล", line2: "โปรดตรวจสอบชื่อหุ้นอีกครั้ง", line3: "-", color: "#FF334B", size1: "xl" };
+                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, line1: "ไม่พบข้อมูล", line2: "โปรดตรวจสอบชื่อหุ้นอีกครั้ง", line3: "-", color: "#FF334B", size1: "xl", size2: "md", weight2: "regular", color2: "#666666" };
                 }
             }
         }
@@ -146,8 +154,8 @@
                         layout: "vertical",
                         contents: [
                             { type: "text", text: data.title, weight: "bold", size: "xl", color: data.color || "#1DB446" },
-                            { type: "text", text: data.line1, size: data.size1, weight: "bold", margin: "md", adjustMode: "shrink-to-fit" },
-                            { type: "text", text: data.line2, size: "md", color: "#666666", margin: "sm", adjustMode: "shrink-to-fit" },
+                            { type: "text", text: data.line1, size: data.size1, weight: "bold", color: "#333333", margin: "md", adjustMode: "shrink-to-fit" },
+                            { type: "text", text: data.line2, size: data.size2, weight: data.weight2, color: data.color2, margin: "sm", adjustMode: "shrink-to-fit" },
                             { type: "text", text: data.line3, size: "xs", color: "#999999", margin: "sm" }
                         ]
                     }
