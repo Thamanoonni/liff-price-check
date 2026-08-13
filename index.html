@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบเช็คราคา</title>
+    <title>ระบบเช็คราคาและสุขภาพหุ้น</title>
     <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; }
@@ -14,12 +14,13 @@
 </head>
 <body>
     <div class="container">
-        <h2>รายงานราคา</h2>
+        <h2>รายงานราคา & สุขภาพหุ้น</h2>
         
         <div class="form-group">
             <label><input type="radio" name="assetType" value="gold" checked onclick="toggleInput()"> ราคาทองคำ</label><br>
             <label><input type="radio" name="assetType" value="stock" onclick="toggleInput()"> ราคาหุ้นรายตัว</label><br>
-            <label><input type="radio" name="assetType" value="portfolio" onclick="toggleInput()"> เช็คหุ้นทั้งพอร์ต</label>
+            <label><input type="radio" name="assetType" value="portfolio" onclick="toggleInput()"> เช็คหุ้นทั้งพอร์ต</label><br>
+            <label><input type="radio" name="assetType" value="health" onclick="toggleInput()"> 🏥 เช็คสุขภาพหุ้น (ปันผล/งบ)</label>
         </div>
 
         <div class="form-group" id="stockInputGroup" style="display: none;">
@@ -39,9 +40,7 @@
 
     <script>
         const LIFF_ID = "2011085564-YWiDl1zG"; 
-        
-        // รายชื่อหุ้นในพอร์ต (สามารถเพิ่ม/ลด ได้ตามต้องการ)
-        const myPortfolio = ["SCB", "AP", "BAM", "NEO", "SNNP"];
+        const myPortfolio = ["SCB", "TISCO", "BAM", "AP"];
 
         async function initializeLiff() {
             try {
@@ -56,11 +55,11 @@
 
         function toggleInput() {
             const type = document.querySelector('input[name="assetType"]:checked').value;
-            // แสดงช่องพิมพ์ชื่อหุ้น เฉพาะตอนเลือก "ราคาหุ้นรายตัว" เท่านั้น
-            document.getElementById('stockInputGroup').style.display = (type === 'stock') ? 'block' : 'none';
+            // แสดงช่องพิมพ์ชื่อหุ้น ตอนเลือก "ราคาหุ้นรายตัว" หรือ "เช็คสุขภาพหุ้น"
+            document.getElementById('stockInputGroup').style.display = (type === 'stock' || type === 'health') ? 'block' : 'none';
         }
 
-        // ฟังก์ชันดึงข้อมูลราคา (รองรับทั้งทองและหุ้น)
+        // 1. ดึงราคาหุ้นแบบย่อ
         async function fetchPriceData(type, name) {
             if (type === 'gold') {
                 try {
@@ -94,9 +93,7 @@
                     const response = await fetch(proxyUrl);
                     const data = await response.json();
                     
-                    if (data.chart && data.chart.error) {
-                        throw new Error(data.chart.error.description || "ไม่พบข้อมูลหุ้น");
-                    }
+                    if (data.chart && data.chart.error) throw new Error("ไม่พบข้อมูลหุ้น");
                     
                     const meta = data.chart.result[0].meta;
                     const currentPrice = meta.regularMarketPrice;
@@ -115,50 +112,115 @@
                         headerBgColor: "#1DB446", 
                         headerFontColor: "#FFFFFF", 
                         items: [
-                            { label: "ราคา :", value: `${currentPrice.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
+                            { label: "ราคาล่าสุด :", value: `${currentPrice.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
                             { label: "เปลี่ยนแปลง :", value: changeText, color: color, size: "md" },
                             { label: "คิดเป็น :", value: percentText, color: color, size: "md" }
                         ],
                         footer: "-"
                     };
                 } catch (error) {
-                    return { 
-                        title: `ไม่พบหุ้น ${name.toUpperCase()}`, 
-                        headerBgColor: "#FF334B", 
-                        headerFontColor: "#FFFFFF", 
-                        items: [{ label: "สถานะ :", value: "ขัดข้อง/ไม่มีข้อมูล", color: "#FF334B", size: "xs" }], 
-                        footer: "-" 
-                    };
+                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "xs" }], footer: "-" };
                 }
             }
         }
 
-        // ฟังก์ชันช่วยสร้างกล่อง Bubble แต่ละใบ (ใช้ซ้ำได้ทั้งเดี่ยวและ Carousel)
+        // 2. ดึงข้อมูลสุขภาพหุ้น (ปันผล + งบการเงิน)
+        async function fetchStockHealth(name) {
+            try {
+                const symbol = name.toUpperCase() + '.BK';
+                const targetUrl = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=summaryDetail,defaultKeyStatistics,financialData,calendarEvents`;
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+
+                const result = data.quoteSummary.result[0];
+                const summary = result.summaryDetail || {};
+                const stats = result.defaultKeyStatistics || {};
+                const financial = result.financialData || {};
+                const calendar = result.calendarEvents || {};
+
+                // แปลงค่าต่าง ๆ
+                const price = financial.currentPrice?.raw || summary.previousClose?.raw || 0;
+                const yieldVal = summary.dividendYield?.raw ? (summary.dividendYield.raw * 100).toFixed(2) + "%" : (summary.trailingAnnualDividendYield?.raw ? (summary.trailingAnnualDividendYield.raw * 100).toFixed(2) + "%" : "N/A");
+                
+                // แปลงวันที่ XD
+                let xdDateText = "N/A";
+                if (calendar.exDividendDate?.raw) {
+                    xdDateText = new Date(calendar.exDividendDate.raw * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+                } else if (summary.exDividendDate?.raw) {
+                    xdDateText = new Date(summary.exDividendDate.raw * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+                }
+
+                const pe = summary.trailingPE?.fmt || "N/A";
+                const pbv = stats.priceToBook?.fmt || "N/A";
+                const eps = stats.trailingEps?.fmt || "N/A";
+                const roe = financial.returnOnEquity?.fmt ? (financial.returnOnEquity.raw * 100).toFixed(2) + "%" : "N/A";
+                const de = financial.debtToEquity?.fmt || "N/A";
+
+                // การ์ดใบที่ 1: ปันผล & Valuation
+                const card1 = {
+                    title: `ปันผล & Valuation (${name.toUpperCase()})`,
+                    headerBgColor: "#0288D1",
+                    headerFontColor: "#FFFFFF",
+                    items: [
+                        { label: "ราคาปัจจุบัน :", value: `${price.toFixed(2)} ฿`, color: "#333333", size: "xl" },
+                        { label: "% ปันผล (Yield) :", value: yieldVal, color: "#1DB446", size: "xl" },
+                        { label: "วัน XD ล่าสุด :", value: xdDateText, color: "#0288D1", size: "md" },
+                        { label: "P/E Ratio :", value: pe, color: "#666666", size: "md" },
+                        { label: "P/BV Ratio :", value: pbv, color: "#666666", size: "md" }
+                    ],
+                    footer: "ข้อมูลสถิติจาก Yahoo Finance"
+                };
+
+                // การ์ดใบที่ 2: ปัจจัยพื้นฐาน & งบ
+                const card2 = {
+                    title: `งบการเงิน (${name.toUpperCase()})`,
+                    headerBgColor: "#5E35B1",
+                    headerFontColor: "#FFFFFF",
+                    items: [
+                        { label: "กำไร/หุ้น (EPS) :", value: `${eps} ฿`, color: "#333333", size: "xl" },
+                        { label: "ROE (%) :", value: roe, color: "#1DB446", size: "xl" },
+                        { label: "หนี้สิน/ทุน (D/E) :", value: de, color: "#666666", size: "md" },
+                        { label: "สถานะหุ้น :", value: "พร้อมวิเคราะห์ปันผล", color: "#5E35B1", size: "md" }
+                    ],
+                    footer: "ประเมินจังหวะสะสมสะท้อนมูลค่าหุ้น"
+                };
+
+                return [card1, card2];
+
+            } catch (error) {
+                alert("เกิดข้อผิดพลาดในการดึงข้อมูลสุขภาพหุ้น: " + error.message);
+                return null;
+            }
+        }
+
+        // ฟังก์ชันสร้าง Flex Bubble
         function createFlexBubble(data) {
             const bodyContents = data.items.map(item => ({
                 type: "box",
                 layout: "horizontal",
                 margin: "md",
                 contents: [
-                    { type: "text", text: item.label, size: item.size === "xxl" ? "xl" : item.size, color: "#666666", flex: 4, gravity: "center" },
-                    { type: "text", text: item.value, size: item.size, weight: "bold", color: item.color, align: "end", flex: 6, adjustMode: "shrink-to-fit", gravity: "center" }
+                    { type: "text", text: item.label, size: item.size === "xxl" ? "xl" : item.size, color: "#666666", flex: 5, gravity: "center" },
+                    { type: "text", text: item.value, size: item.size, weight: "bold", color: item.color, align: "end", flex: 5, adjustMode: "shrink-to-fit", gravity: "center" }
                 ]
             }));
 
-            if (data.footer !== "-") {
+            if (data.footer && data.footer !== "-") {
                 bodyContents.push({ type: "text", text: data.footer, size: "xs", color: "#999999", margin: "xl", wrap: true });
             }
 
             return {
                 type: "bubble",
-                size: "mega", // กำหนดขนาดมาตรฐานให้ไถลื่นๆ ใน Carousel
+                size: "mega",
                 header: {
                     type: "box",
                     layout: "vertical",
                     backgroundColor: data.headerBgColor,
                     paddingAll: "lg",
                     contents: [
-                        { type: "text", text: data.title, weight: "bold", size: "xl", color: data.headerFontColor }
+                        { type: "text", text: data.title, weight: "bold", size: "lg", color: data.headerFontColor }
                     ]
                 },
                 body: {
@@ -176,29 +238,27 @@
             let flexJson = { type: "flex", altText: "รายงานราคา", contents: {} };
 
             if (type === 'gold' || type === 'stock') {
-                // กรณีเลือก ทอง หรือ หุ้นตัวเดียว (Bubble แบบเดิม)
-                if (type === 'stock' && !stockName) {
-                    alert("กรุณาใส่ชื่อหุ้น");
-                    return;
-                }
+                if (type === 'stock' && !stockName) { alert("กรุณาใส่ชื่อหุ้น"); return; }
                 const data = await fetchPriceData(type, stockName);
                 flexJson.altText = `รายงาน${data.title}`;
                 flexJson.contents = createFlexBubble(data);
 
             } else if (type === 'portfolio') {
-                // กรณีเลือก หุ้นทั้งพอร์ต (Carousel)
                 flexJson.altText = "รายงานราคาพอร์ตลงทุน";
-                
-                // ใช้ Promise.all เพื่อดึงข้อมูลหุ้นทุกตัวในพอร์ตพร้อมๆ กัน (เร็วขึ้น)
                 const promises = myPortfolio.map(symbol => fetchPriceData('stock', symbol));
                 const results = await Promise.all(promises);
+                flexJson.contents = { type: "carousel", contents: results.map(data => createFlexBubble(data)) };
+
+            } else if (type === 'health') {
+                if (!stockName) { alert("กรุณาใส่ชื่อหุ้นที่ต้องการเช็คสุขภาพ"); return; }
+                flexJson.altText = `รายงานสุขภาพหุ้น ${stockName.toUpperCase()}`;
                 
-                // นำผลลัพธ์ที่ได้มาสร้างเป็นกล่อง Bubble หลายๆ ใบ
-                const bubbles = results.map(data => createFlexBubble(data));
+                const cardsData = await fetchStockHealth(stockName);
+                if (!cardsData) return;
                 
                 flexJson.contents = {
                     type: "carousel",
-                    contents: bubbles
+                    contents: cardsData.map(data => createFlexBubble(data))
                 };
             }
 
