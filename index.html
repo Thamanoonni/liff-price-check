@@ -134,6 +134,11 @@
                 const response = await fetch(proxyUrl);
                 const data = await response.json();
 
+                // 🚨 เพิ่มการเช็คข้อมูลตรงนี้: ถ้าโครงสร้างข้อมูลไม่มี result ให้โยน Error ทันที
+                if (!data.quoteSummary || data.quoteSummary.error || !data.quoteSummary.result) {
+                    throw new Error("ไม่มีข้อมูลสถิติ/งบการเงินบน Yahoo Finance");
+                }
+
                 const result = data.quoteSummary.result[0];
                 const summary = result.summaryDetail || {};
                 const stats = result.defaultKeyStatistics || {};
@@ -190,8 +195,14 @@
                 return [card1, card2];
 
             } catch (error) {
-                alert("เกิดข้อผิดพลาดในการดึงข้อมูลสุขภาพหุ้น: " + error.message);
-                return null;
+                // เปลี่ยนจากการเด้ง Alert น่ารำคาญ เป็นการคืนค่าการ์ดสีแดงกลับไปแสดงใน LINE
+                return [{ 
+                    title: `ไม่พบงบการเงิน ${name.toUpperCase()}`, 
+                    headerBgColor: "#FF334B", 
+                    headerFontColor: "#FFFFFF", 
+                    items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "xs" }], 
+                    footer: "-" 
+                }];
             }
         }
 
