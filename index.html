@@ -87,7 +87,8 @@
                     // 🚨 สำคัญ: นำลิงก์ URL จาก Google Apps Script มาเปลี่ยนตรงนี้ 🚨
                     const gasUrl = `https://script.google.com/macros/s/AKfycbydHpb-zOdY6KXkf7nDJNZMAZ4_upKWQzrUbs0K41lj2FX9NT7mfdjbQ1t94SL_fA7j/exec?symbol=${symbol}`;
                     
-                    const response = await fetch(gasUrl);
+                    // เพิ่ม { redirect: "follow" } เพื่อให้มันตามลิงก์ที่ Google ชิ่งไปมา
+                    const response = await fetch(gasUrl, { redirect: "follow" });
                     const data = await response.json();
                     
                     if (data.status !== "success") throw new Error(data.message);
