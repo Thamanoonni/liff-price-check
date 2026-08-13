@@ -90,12 +90,14 @@
             } else {
                 try {
                     const symbol = name.toUpperCase() + '.BK';
-                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`;
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                    // เพิ่ม ?ts=... (Timestamp) เข้าไปท้ายลิงก์ เพื่อทะลวง Cache ของ Proxy ให้ดึงข้อมูลใหม่เสมอ
+                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?region=TH&lang=th-TH&ts=${Date.now()}`;
+                    
+                    // เปลี่ยนมาใช้ endpoint แบบ /raw แทน /get เพื่อรับข้อมูล JSON ตรงๆ
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
                     
                     const response = await fetch(proxyUrl);
-                    const proxyData = await response.json();
-                    const data = JSON.parse(proxyData.contents); 
+                    const data = await response.json(); // แปลงเป็น JSON โดยตรง ไม่ต้องผ่าน proxyData.contents
                     
                     const result = data.chart.result[0];
                     const meta = result.meta;
@@ -110,8 +112,8 @@
                     
                     return { 
                         title: `ราคาหุ้น ${name.toUpperCase()}`, 
-                        headerBgColor: "#1DB446", // พื้นหลังสีเขียว
-                        headerFontColor: "#FFFFFF", // ตัวหนังสือสีขาว
+                        headerBgColor: "#1DB446", 
+                        headerFontColor: "#FFFFFF", 
                         items: [
                             { label: "ราคาล่าสุด :", value: `${currentPrice.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
                             { label: "เปลี่ยนแปลง :", value: `${sign}${Math.abs(change).toFixed(2)}`, color: color, size: "md" },
@@ -121,7 +123,7 @@
                     };
                 } catch (error) {
                     console.error("Stock API Error:", error);
-                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ไม่พบข้อมูล/ชื่อหุ้นผิด", color: "#FF334B", size: "md" }], footer: "-" };
+                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ไม่พบข้อมูล/API ขัดข้อง", color: "#FF334B", size: "md" }], footer: "-" };
                 }
             }
         }
