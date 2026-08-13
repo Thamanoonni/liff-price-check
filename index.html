@@ -119,7 +119,7 @@
             }
         }
 
-        // 2. ดึงข้อมูลสุขภาพหุ้น (TradingView API + คำนวณเงินปันผลบาทต่อหุ้น)
+        // 2. ดึงข้อมูลสุขภาพหุ้น (เพิ่มการคำนวณปันผลประมาณการจาก EPS และ Payout Ratio)
         async function fetchStockHealth(name) {
             try {
                 const symbol = name.toUpperCase();
@@ -160,21 +160,38 @@
                 
                 const price = stats[0] !== null ? stats[0] : 0;
                 const pe = stats[1] !== null ? stats[1].toFixed(2) : "N/A";
-                const eps = stats[2] !== null ? stats[2].toFixed(2) : "N/A";
+                const eps = stats[2] !== null ? stats[2] : null;
                 const yieldPercent = stats[3] !== null ? stats[3] : 0;
                 const high52 = stats[4] !== null ? stats[4].toFixed(2) : "N/A";
                 const low52 = stats[5] !== null ? stats[5].toFixed(2) : "N/A";
 
-                // คำนวณเงินปันผลจ่ายต่อหุ้น (DPS) เป็นบาท จาก % Yield และราคาปัจจุบัน
-                let calculatedDPS = "N/A";
+                // 1. DPS จากสถิติเดิม (อ้างอิงอดีต)
+                let pastDPS = "N/A";
                 if (price > 0 && yieldPercent > 0) {
-                    const dpsValue = (price * (yieldPercent / 100));
-                    calculatedDPS = dpsValue.toFixed(2) + " ฿";
+                    pastDPS = ((price * (yieldPercent / 100))).toFixed(2) + " ฿";
                 }
-
                 const yieldValText = yieldPercent > 0 ? yieldPercent.toFixed(2) + "%" : "N/A";
 
-                // การ์ดใบที่ 1: Valuation
+                // 2. คำนวณปันผลประมาณการ (Estimated Dividend) จากกำไรปัจจุบัน (EPS)
+                // สมมติฐานอัตราการจ่ายปันผล (Payout Ratio) ที่ 80% ของกำไรสุทธิ
+                const payoutRatio = 0.80;
+                let estDPS = "N/A";
+                let estYieldText = "N/A";
+
+                if (eps !== null && eps > 0 && price > 0) {
+                    const calculatedEstDPS = eps * payoutRatio;
+                    estDPS = calculatedEstDPS.toFixed(2) + " ฿";
+                    
+                    const calculatedEstYield = (calculatedEstDPS / price) * 100;
+                    estYieldText = calculatedEstYield.toFixed(2) + "%";
+                } else {
+                    estDPS = "0.00 ฿ (ไม่มีกำไร)";
+                    estYieldText = "0.00%";
+                }
+
+                const epsText = eps !== null ? eps.toFixed(2) + " ฿" : "N/A";
+
+                // การ์ดใบที่ 1: Valuation & กำไร
                 const card1 = {
                     title: `Valuation (${symbol})`,
                     headerBgColor: "#5E35B1",
@@ -182,22 +199,23 @@
                     items: [
                         { label: "ราคาปัจจุบัน :", value: price > 0 ? `${price.toFixed(2)} ฿` : "N/A", color: "#333333", size: "xl" },
                         { label: "P/E Ratio :", value: pe, color: "#1DB446", size: "xl" },
-                        { label: "กำไร/หุ้น (EPS) :", value: eps !== "N/A" ? `${eps} ฿` : "N/A", color: "#666666", size: "md" }
+                        { label: "กำไร/หุ้น (EPS) :", value: epsText, color: "#666666", size: "md" }
                     ],
                     footer: "ประเมินความถูกแพงและกำไรของธุรกิจ"
                 };
 
-                // การ์ดใบที่ 2: ข้อมูลปันผล & สถิติ (เพิ่มการคำนวณเงินปันผลเป็นบาท)
+                // การ์ดใบที่ 2: ปันผลเดิม vs ปันผลคาดการณ์จากกำไรจริง
                 const card2 = {
-                    title: `ปันผล & สถิติ (${symbol})`,
+                    title: `ปันผล & ประมาณการ (${symbol})`,
                     headerBgColor: "#0288D1",
                     headerFontColor: "#FFFFFF",
                     items: [
-                        { label: "% ปันผล (Yield) :", value: yieldValText, color: "#1DB446", size: "xl" },
-                        { label: "ปันผล/หุ้น (DPS) :", value: calculatedDPS, color: "#333333", size: "md" },
+                        { label: "% ปันผล (อดีต) :", value: yieldValText, color: "#666666", size: "md" },
+                        { label: "% ปันผล (คาดการณ์):", value: estYieldText, color: "#1DB446", size: "xl" },
+                        { label: "ปันผลคาดการณ์/หุ้น:", value: estDPS, color: "#333333", size: "md" },
                         { label: "กรอบราคา 52w :", value: (low52 !== "N/A" && high52 !== "N/A") ? `${low52} - ${high52}` : "N/A", color: "#666666", size: "xs" }
                     ],
-                    footer: "คำนวณผลตอบแทนเทียบราคาปัจจุบัน"
+                    footer: "คาดการณ์จาก EPS ปัจจุบัน (Payout 80%)"
                 };
 
                 return [card1, card2];
