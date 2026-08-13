@@ -88,68 +88,50 @@
                     return { title: "ราคาทองคำแท่ง", headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ไม่สามารถดึงข้อมูลได้", color: "#FF334B", size: "xl" }], footer: "-" };
                 }
             } else {
-                // ดึงราคาหุ้นไทยด้วยการแกะข้อมูลจาก Google Finance (Web Scraping)
+                // ดึงราคาหุ้นผ่าน Yahoo Finance Quote API v7 (เบาและเสถียรกว่า)
                 try {
-                    const symbol = name.toUpperCase();
-                    // กำหนดตลาด BKK (ตลาดหลักทรัพย์แห่งประเทศไทย) ให้กับ Google Finance
-                    const url = `https://www.google.com/finance/quote/${symbol}:BKK?hl=th`;
-                    // ใช้ Proxy แบบ GET เพื่อดึง HTML กลับมา
+                    const symbol = name.toUpperCase() + '.BK';
+                    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+                    // ใช้ Proxy แบบ GET 
                     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
                     
                     const response = await fetch(proxyUrl);
                     const proxyData = await response.json();
-                    const htmlText = proxyData.contents; 
                     
-                    // 1. ค้นหาราคาล่าสุด จากคลาส YMlKec fxKbKc (คลาสมาตรฐานของหน้า Google Finance)
-                    const priceMatch = htmlText.match(/class="YMlKec fxKbKc"[^>]*>(.*?)<\/div>/);
-                    if (!priceMatch) throw new Error("ไม่พบตัวเลขราคาหุ้น (โครงสร้างเว็บอาจเปลี่ยนแปลง)");
+                    if (!proxyData.contents) throw new Error("Proxy ตอบกลับผิดพลาด");
                     
-                    // ตัดเครื่องหมาย ฿ หรือ , ออกให้เหลือแต่ตัวเลข
-                    const currentPrice = parseFloat(priceMatch[1].replace(/[^\d.]/g, ''));
+                    const data = JSON.parse(proxyData.contents);
+                    const result = data.quoteResponse.result[0];
                     
-                    // 2. ค้นหาส่วนต่างราคา และเปอร์เซ็นต์ (ซ่อนอยู่ในคลาส JwB6zf)
-                    // เราจะดึงข้อมูลที่อยู่ในคลาส JwB6zf ทั้งหมดออกมา
-                    const changeMatches = [...htmlText.matchAll(/class="JwB6zf"[^>]*>(.*?)<\/div>/g)];
+                    if (!result) throw new Error("ไม่พบข้อมูลหุ้นในระบบ");
                     
-                    let changeText = "0.00";
-                    let percentText = "0.00%";
-                    let sign = "";
-                    let color = "#999999";
-
-                    if (changeMatches.length >= 2) {
-                        // Match ตัวแรกคือส่วนต่างราคา, ตัวที่สองคือเปอร์เซ็นต์ (มักจะมีวงเล็บครอบ)
-                        const rawChange = changeMatches[0][1].replace(/[^\d.]/g, '');
-                        const rawPercent = changeMatches[1][1].replace(/[^\d.]/g, '');
-                        
-                        // ตรวจสอบแนวโน้มราคาขึ้นหรือลง จากชื่อคลาสในกล่องของ Google Finance
-                        if (htmlText.includes('class="P2Luy Ez2Ioe"')) { 
-                            // คลาสติดลบ (แดง)
-                            sign = "-";
-                            color = "#FF334B";
-                        } else if (htmlText.includes('class="P2Luy"')) {
-                            // คลาสบวก (เขียว)
-                            sign = "+";
-                            color = "#1DB446";
-                        }
-
-                        changeText = `${sign}${rawChange}`;
-                        percentText = `${sign}${rawPercent}%`;
-                    }
-
+                    const currentPrice = result.regularMarketPrice;
+                    const change = result.regularMarketChange;
+                    const percentChange = result.regularMarketChangePercent;
+                    
+                    const sign = change > 0 ? "+" : (change < 0 ? "-" : "");
+                    const color = change > 0 ? "#1DB446" : (change < 0 ? "#FF334B" : "#999999");
+                    
                     return { 
-                        title: `ราคาหุ้น ${symbol}`, 
+                        title: `ราคาหุ้น ${name.toUpperCase()}`, 
                         headerBgColor: "#1DB446", 
                         headerFontColor: "#FFFFFF", 
                         items: [
                             { label: "ราคาล่าสุด :", value: `${currentPrice.toFixed(2)} ฿`, color: "#333333", size: "xxl" },
-                            { label: "เปลี่ยนแปลง :", value: changeText, color: color, size: "md" },
-                            { label: "คิดเป็น :", value: percentText, color: color, size: "md" }
+                            { label: "เปลี่ยนแปลง :", value: `${sign}${Math.abs(change).toFixed(2)}`, color: color, size: "md" },
+                            { label: "คิดเป็น :", value: `${sign}${Math.abs(percentChange).toFixed(2)}%`, color: color, size: "md" }
                         ],
                         footer: "-"
                     };
                 } catch (error) {
-                    console.error("Scraping Error:", error);
-                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "md" }], footer: "-" };
+                    console.error("Yahoo API Error:", error);
+                    return { 
+                        title: `ไม่พบหุ้น ${name.toUpperCase()}`, 
+                        headerBgColor: "#FF334B", 
+                        headerFontColor: "#FFFFFF", 
+                        items: [{ label: "สถานะ :", value: "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "md" }], 
+                        footer: "-" 
+                    };
                 }
             }
         }
