@@ -107,11 +107,19 @@
                         footer: "-"
                     };
                 } catch (error) {
+                    // เพิ่ม Alert ให้เด้งขึ้นมาดูบนหน้าจอเลยว่า Error คืออะไร
+                    alert("แจ้งเตือน Error: " + error.message);
+                    
                     return { 
                         title: `ไม่พบหุ้น ${name.toUpperCase()}`, 
                         headerBgColor: "#FF334B", 
                         headerFontColor: "#FFFFFF", 
-                        items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลล้มเหลว", color: "#FFFFFF", size: "xs" }], 
+                        items: [{ 
+                            label: "สถานะ :", 
+                            value: error.message || "ดึงข้อมูลล้มเหลว", 
+                            color: "#FF334B", // เปลี่ยนกลับมาเป็นสีแดง จะได้มองเห็น
+                            size: "xs" 
+                        }], 
                         footer: "-" 
                     };
                 }
