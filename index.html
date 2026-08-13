@@ -63,32 +63,23 @@
         // ฟังก์ชันดึงข้อมูลราคาของจริงผ่าน API
         async function fetchPriceData(type, name) {
             if (type === 'gold') {
-                // ดึงราคาทองจาก Aurora โดยการ Scrape หน้าเว็บผ่าน Proxy
+                // ดึงราคาทองจาก API
                 try {
-                    const auroraUrl = 'https://www.aurora.co.th/';
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(auroraUrl)}`;
+                    const response = await fetch('https://api.chnwt.dev/thai-gold-api/latest');
+                    const data = await response.json();
                     
-                    const response = await fetch(proxyUrl);
-                    const proxyData = await response.json();
-                    const htmlText = proxyData.contents;
-                    
-                    // ใช้ Regex ค้นหาตัวเลขราคาที่อยู่ใกล้คำว่า "ขายออก" และ "รับซื้อ"
-                    const sellMatch = htmlText.match(/ขายออก.*?(\d{2},\d{3})/);
-                    const buyMatch = htmlText.match(/รับซื้อ.*?(\d{2},\d{3})/);
-                    
-                    const goldSell = sellMatch ? sellMatch[1] : "ไม่พบข้อมูล";
-                    const goldBuy = buyMatch ? buyMatch[1] : "ไม่พบข้อมูล";
-                    const updateTime = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+                    const goldBuy = data.response.price.gold_bar.buy;
+                    const goldSell = data.response.price.gold_bar.sell;
+                    const updateTime = data.response.update_time;
                     
                     return { 
-                        title: "ราคาทองคำแท่ง (Aurora)", 
+                        title: "ราคาทองคำแท่ง", 
                         price: `ขายออก: ${goldSell}`, 
-                        detail: `รับซื้อ: ${goldBuy} | เวลา: ${updateTime}`,
-                        color: "#FFB000" // ปรับสีตัวอักษรเป็นสีทองให้เข้ากับแบรนด์
+                        detail: `รับซื้อ: ${goldBuy} | อัปเดต: ${updateTime}` 
                     };
                 } catch (error) {
-                    console.error("Aurora Scraping Error:", error);
-                    return { title: "ราคาทอง (Aurora)", price: "ดึงข้อมูลล้มเหลว", detail: "อาจมีการเปลี่ยนโครงสร้างเว็บต้นทาง" };
+                    console.error("Gold API Error:", error);
+                    return { title: "ราคาทองคำ", price: "ไม่สามารถดึงข้อมูลได้", detail: "ระบบ API ต้นทางอาจมีปัญหา" };
                 }
             } else {
                 // ดึงราคาหุ้นไทยผ่าน Yahoo Finance API และ Proxy
