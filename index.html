@@ -24,14 +24,22 @@
 
         <div class="form-group" id="stockInputGroup" style="display: none;">
             <label for="stockName">ชื่อหุ้น:</label>
-            <input type="text" id="stockName" placeholder="เช่น TISCO, SCB, BAM" style="width: 100%; padding: 8px;">
+            <!-- เพิ่ม list และ text-transform ให้พิมพ์ตัวพิมพ์ใหญ่เสมอ -->
+            <input type="text" id="stockName" list="stockList" placeholder="เช่น TISCO, SCB, BAM" style="width: 100%; padding: 8px; text-transform: uppercase;">
+            <datalist id="stockList">
+                <option value="TISCO"></option>
+                <option value="SCB"></option>
+                <option value="BAM"></option>
+                <option value="NEO"></option>
+                <option value="AP"></option>
+            </datalist>
         </div>
 
         <button onclick="sendFlexMessage()">ส่งข้อความเข้าแชท</button>
     </div>
 
     <script>
-        // ใส่ LIFF ID ที่ได้จาก LINE Developers Console
+        // LIFF ID ของคุณ
         const LIFF_ID = "2011085564-YWiDl1zG"; 
 
         // เริ่มต้นการทำงานของ LIFF
@@ -52,13 +60,62 @@
             document.getElementById('stockInputGroup').style.display = isStock ? 'block' : 'none';
         }
 
-        // ฟังก์ชันดึงข้อมูลราคา (จำลองการต่อ API)
+        // ฟังก์ชันดึงข้อมูลราคาของจริงผ่าน API
         async function fetchPriceData(type, name) {
-            // ในการใช้งานจริง คุณสามารถเขียน JavaScript (Fetch API) เพื่อดึงข้อมูลจาก API ของคุณที่นี่
             if (type === 'gold') {
-                return { title: "ราคาทองคำ", price: "40,500 บาท", detail: "ทองคำแท่ง 96.5%" };
+                // ดึงราคาทองจาก API
+                try {
+                    const response = await fetch('https://api.chnwt.dev/thai-gold-api/latest');
+                    const data = await response.json();
+                    
+                    const goldBuy = data.response.price.gold_bar.buy;
+                    const goldSell = data.response.price.gold_bar.sell;
+                    const updateTime = data.response.update_time;
+                    
+                    return { 
+                        title: "ราคาทองคำแท่ง", 
+                        price: `ขายออก: ${goldSell}`, 
+                        detail: `รับซื้อ: ${goldBuy} | อัปเดต: ${updateTime}` 
+                    };
+                } catch (error) {
+                    console.error("Gold API Error:", error);
+                    return { title: "ราคาทองคำ", price: "ไม่สามารถดึงข้อมูลได้", detail: "ระบบ API ต้นทางอาจมีปัญหา" };
+                }
             } else {
-                return { title: `ราคาหุ้น ${name.toUpperCase()}`, price: "99.50 บาท", detail: "ราคาล่าสุด (จำลอง)" };
+                // ดึงราคาหุ้นไทยผ่าน Yahoo Finance API และ Proxy
+                try {
+                    const symbol = name.toUpperCase() + '.BK';
+                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`;
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                    
+                    const response = await fetch(proxyUrl);
+                    const proxyData = await response.json();
+                    const data = JSON.parse(proxyData.contents); 
+                    
+                    const result = data.chart.result[0];
+                    const meta = result.meta;
+                    
+                    const currentPrice = meta.regularMarketPrice;
+                    const previousClose = meta.chartPreviousClose;
+                    
+                    // คำนวณส่วนต่าง และ % การเปลี่ยนแปลง
+                    const change = currentPrice - previousClose;
+                    const percentChange = ((change / previousClose) * 100).toFixed(2);
+                    const sign = change > 0 ? "+" : (change < 0 ? "-" : "");
+                    
+                    // กำหนดสีตามการขึ้นลงของราคา
+                    const color = change > 0 ? "#1DB446" : (change < 0 ? "#FF334B" : "#999999");
+                    
+                    return { 
+                        title: `หุ้น ${name.toUpperCase()}`, 
+                        price: `${currentPrice.toFixed(2)} ฿`, 
+                        detail: `เปลี่ยนแปลง: ${sign}${Math.abs(change).toFixed(2)} (${sign}${Math.abs(percentChange)}%)`,
+                        color: color 
+                    };
+                } catch (error) {
+                    console.error("Stock API Error:", error);
+                    return { title: `ไม่พบหุ้น ${name.toUpperCase()}`, price: "-", detail: "โปรดตรวจสอบชื่อหุ้นให้ถูกต้อง หรือ API มีปัญหา" };
+                }
             }
         }
 
@@ -75,7 +132,7 @@
             // 1. ดึงข้อมูลราคา
             const data = await fetchPriceData(type, stockName);
 
-            // 2. สร้างโครงสร้าง Flex Message (JSON)
+            // 2. สร้างโครงสร้าง Flex Message (JSON) โดยดึงสีจาก API มาใช้
             const flexJson = {
                 type: "flex",
                 altText: `รายงาน${data.title}`,
@@ -85,7 +142,7 @@
                         type: "box",
                         layout: "vertical",
                         contents: [
-                            { type: "text", text: data.title, weight: "bold", size: "xl", color: "#1DB446" },
+                            { type: "text", text: data.title, weight: "bold", size: "xl", color: data.color || "#1DB446" },
                             { type: "text", text: data.price, size: "3xl", weight: "bold", margin: "md" },
                             { type: "text", text: data.detail, size: "sm", color: "#999999", margin: "sm" }
                         ]
