@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบเช็คราคาและสุขภาพหุ้น</title>
+    <title>ระบบเช็คข้อมูลหุ้นและทอง</title>
     <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; }
@@ -14,11 +14,12 @@
 </head>
 <body>
     <div class="container">
-        <h2>ระบบเช็คหุ้น</h2>
-        
+        <h2>เมนูการใช้งาน</h2>
         <div class="form-group">
-            <label><input type="radio" name="assetType" value="health" checked onclick="toggleInput()"> 🏥 เช็คสุขภาพหุ้น (รายตัว)</label><br>
-            <label><input type="radio" name="assetType" value="portfolio" onclick="toggleInput()"> 📊 เช็คหุ้นทั้งพอร์ต</label>
+            <label><input type="radio" name="assetType" value="gold" onclick="toggleInput()"> 🥇 ราคาทองคำ</label><br>
+            <label><input type="radio" name="assetType" value="stock" onclick="toggleInput()"> 📈 ราคาหุ้นรายตัว</label><br>
+            <label><input type="radio" name="assetType" value="portfolio" checked onclick="toggleInput()"> 📊 เช็คหุ้นทั้งพอร์ต</label><br>
+            <label><input type="radio" name="assetType" value="health" onclick="toggleInput()"> 🏥 เช็คสุขภาพหุ้น (ปันผล/งบ)</label>
         </div>
 
         <div id="inputSection" class="form-group">
@@ -26,7 +27,7 @@
             <input type="text" id="stockInput" value="SCB,AP,BAM,NEO,SNNP" style="width: 90%; padding: 8px; text-transform: uppercase;">
         </div>
 
-        <div class="form-group" id="payoutSection">
+        <div class="form-group" id="payoutSection" style="display: none;">
             <label>Payout Ratio (%):</label>
             <input type="number" id="payoutRatio" value="80" style="width: 90%; padding: 8px;">
         </div>
@@ -36,65 +37,59 @@
 
     <script>
         const LIFF_ID = "2011085564-YWiDl1zG"; 
-
         async function initializeLiff() { await liff.init({ liffId: LIFF_ID }); }
 
         function toggleInput() {
             const type = document.querySelector('input[name="assetType"]:checked').value;
+            document.getElementById('inputSection').style.display = (type === 'gold') ? 'none' : 'block';
             document.getElementById('payoutSection').style.display = (type === 'health') ? 'block' : 'none';
         }
 
-        async function fetchStockData(symbol, payoutPercent) {
+        async function getGoldData() {
+            const res = await fetch('https://api.chnwt.dev/thai-gold-api/latest');
+            const data = await res.json();
+            return {
+                title: "ราคาทองคำ", headerBgColor: "#FFB000",
+                items: [{ l: "ขายออก", v: data.response.price.gold_bar.sell + " ฿" }, { l: "รับซื้อ", v: data.response.price.gold_bar.buy + " ฿" }]
+            };
+        }
+
+        async function getStockData(symbol, type, payout) {
             try {
                 const tvUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://scanner.tradingview.com/thailand/scan');
-                const response = await fetch(tvUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        "symbols": { "tickers": [`SET:${symbol.toUpperCase()}`] },
-                        "columns": ["close", "price_earnings_ttm", "earnings_per_share_basic_ttm", "dividend_yield_recent"]
-                    })
-                });
-                const data = await response.json();
-                if (!data.data || data.data.length === 0) throw new Error(`${symbol}: ไม่พบข้อมูล`);
-                
+                const res = await fetch(tvUrl, { method: 'POST', body: JSON.stringify({ "symbols": { "tickers": [`SET:${symbol.toUpperCase()}`] }, "columns": ["close", "price_earnings_ttm", "earnings_per_share_basic_ttm", "dividend_yield_recent"] }) });
+                const data = await res.json();
                 const stats = data.data[0].d;
-                const price = stats[0] || 0;
-                const eps = stats[2] || 0;
-                const yieldP = stats[3] || 0;
-                const payoutRatio = payoutPercent / 100;
+                const price = stats[0] || 0, eps = stats[2] || 0, yieldP = stats[3] || 0;
                 
-                const estDPS = (eps > 0) ? (eps * payoutRatio).toFixed(2) : "0.00";
-                const estYield = (price > 0) ? (((eps * payoutRatio) / price) * 100).toFixed(2) : "0.00";
-
-                return {
-                    title: symbol.toUpperCase(),
-                    headerBgColor: "#00B900",
-                    items: [
-                        { l: "ราคาปัจจุบัน", v: `${price.toFixed(2)} ฿` },
-                        { l: "EPS", v: `${eps.toFixed(2)} ฿` },
-                        { l: "ปันผล(อดีต)", v: `${yieldP.toFixed(2)}%` },
-                        { l: "ปันผลคาดการณ์", v: `${estYield}% (${estDPS} ฿)` }
-                    ]
-                };
-            } catch (e) { return { title: symbol.toUpperCase(), headerBgColor: "#FF334B", items: [{l: "สถานะ", v: "Error"}] }; }
+                if (type === 'stock') {
+                    return { title: symbol.toUpperCase(), headerBgColor: "#1DB446", items: [{ l: "ราคาปัจจุบัน", v: price.toFixed(2) + " ฿" }] };
+                } else if (type === 'health') {
+                    const estDPS = (eps * (payout/100)).toFixed(2);
+                    const estYield = (price > 0) ? (((eps * (payout/100)) / price) * 100).toFixed(2) : "0.00";
+                    return { title: symbol.toUpperCase(), headerBgColor: "#5E35B1", items: [{ l: "EPS", v: eps.toFixed(2) + " ฿" }, { l: "ปันผล(อดีต)", v: yieldP.toFixed(2) + "%" }, { l: "คาดการณ์", v: `${estYield}% (${estDPS} ฿)` }] };
+                }
+                return { title: symbol.toUpperCase(), headerBgColor: "#0288D1", items: [{ l: "ราคา", v: price.toFixed(2) + " ฿" }, { l: "ปันผล", v: yieldP.toFixed(2) + "%" }] };
+            } catch(e) { return { title: symbol.toUpperCase(), headerBgColor: "#FF334B", items: [{l: "สถานะ", v: "Error"}] }; }
         }
 
         async function sendFlexMessage() {
             const type = document.querySelector('input[name="assetType"]:checked').value;
-            const inputVal = document.getElementById('stockInput').value;
-            const payout = document.getElementById('payoutRatio').value;
-            const symbols = inputVal.split(',').map(s => s.trim());
+            let cards = [];
+            if (type === 'gold') {
+                cards = [await getGoldData()];
+            } else {
+                const symbols = document.getElementById('stockInput').value.split(',').map(s => s.trim());
+                cards = await Promise.all(symbols.map(s => getStockData(s, type, document.getElementById('payoutRatio').value)));
+            }
 
-            const results = await Promise.all(symbols.map(s => fetchStockData(s, payout)));
-            
-            const contents = results.map(data => ({
+            const contents = cards.map(data => ({
                 type: "bubble", size: "mega",
                 header: { type: "box", layout: "vertical", backgroundColor: data.headerBgColor, paddingAll: "md", contents: [{ type: "text", text: data.title, color: "#FFFFFF", weight: "bold" }] },
-                body: { type: "box", layout: "vertical", contents: data.items.map(i => ({ type: "box", layout: "horizontal", contents: [{ type: "text", text: i.l, size: "sm", color: "#666666" }, { type: "text", text: i.v, size: "sm", weight: "bold", align: "end" }] })) }
+                body: { type: "box", layout: "vertical", contents: data.items.map(i => ({ type: "box", layout: "horizontal", contents: [{ type: "text", text: i.l, size: "sm", color: "#666666", flex: 6 }, { type: "text", text: i.v, size: "sm", weight: "bold", align: "end", flex: 4 }] })) }
             }));
 
-            await liff.sendMessages([{ type: "flex", altText: "รายงานหุ้น", contents: { type: "carousel", contents } }]);
+            await liff.sendMessages([{ type: "flex", altText: "รายงานข้อมูล", contents: { type: "carousel", contents } }]);
             liff.closeWindow();
         }
         initializeLiff();
