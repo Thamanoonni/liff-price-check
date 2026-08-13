@@ -119,43 +119,54 @@
             }
         }
 
-        // 2. ดึงข้อมูลสุขภาพหุ้น (แก้ปัญหา Yahoo บล็อก โดยใช้ v7 API แทน)
+        // 2. ดึงข้อมูลสุขภาพหุ้น (Hybrid: ราคาจาก Yahoo v8, สถิติจาก Google Finance)
         async function fetchStockHealth(name) {
             try {
-                const symbol = name.toUpperCase() + '.BK';
-                // เปลี่ยนมาใช้ v7/quote ซึ่งเสถียรและไม่ค่อยโดนบล็อกเหมือน v10
-                const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                const symbolYahoo = name.toUpperCase() + '.BK';
+                const symbolGoogle = name.toUpperCase() + ':BKK';
+                
+                // --- ส่วนที่ 1: ดึงราคาปัจจุบันจาก Yahoo v8 (เสถียรสุด ไม่ติดบล็อก) ---
+                const targetUrlYahoo = `https://query2.finance.yahoo.com/v8/finance/chart/${symbolYahoo}`;
+                const proxyYahoo = `https://corsproxy.io/?${encodeURIComponent(targetUrlYahoo)}`;
+                
+                const resYahoo = await fetch(proxyYahoo);
+                const dataYahoo = await resYahoo.json();
+                
+                if (dataYahoo.chart && dataYahoo.chart.error) {
+                    throw new Error("ไม่พบข้อมูลหุ้นในระบบ");
+                }
+                
+                const price = dataYahoo.chart.result[0].meta.regularMarketPrice;
 
-                const response = await fetch(proxyUrl);
-                const data = await response.json();
+                // --- ส่วนที่ 2: ดึงสถิติปันผล/งบ จาก Google Finance ---
+                let pe = "N/A", yieldVal = "N/A", eps = "N/A", range52 = "N/A";
+                
+                try {
+                    // ใช้ hl=en บังคับเมนูภาษาอังกฤษ จะได้ดักจับคำว่า P/E ratio และ Dividend yield ได้แม่นยำ
+                    const targetUrlGoogle = `https://www.google.com/finance/quote/${symbolGoogle}?hl=en`;
+                    const proxyGoogle = `https://corsproxy.io/?${encodeURIComponent(targetUrlGoogle)}`;
+                    
+                    const resGoogle = await fetch(proxyGoogle);
+                    const html = await resGoogle.text();
 
-                // เช็คว่ามีข้อมูลส่งกลับมาหรือไม่
-                if (!data.quoteResponse || !data.quoteResponse.result || data.quoteResponse.result.length === 0) {
-                    throw new Error("ไม่มีข้อมูลงบการเงินบนระบบ");
+                    // ฟังก์ชันแกะค่าสถิติจากโครงสร้าง HTML
+                    const extractStat = (label) => {
+                        const regex = new RegExp(`>${label}<\\/div>\\s*<div[^>]*>(.*?)<\\/div>`, 'i');
+                        const match = html.match(regex);
+                        // ลบแท็ก HTML ที่อาจซ้อนอยู่ทิ้งไปให้เหลือแต่ตัวเลข
+                        return match ? match[1].replace(/<[^>]*>?/gm, '').trim() : "N/A";
+                    };
+
+                    pe = extractStat("P/E ratio");
+                    yieldVal = extractStat("Dividend yield");
+                    eps = extractStat("Earnings per share");
+                    range52 = extractStat("52-week range");
+                    
+                } catch (e) {
+                    console.log("Scrape stats error, fallback to N/A");
                 }
 
-                const result = data.quoteResponse.result[0];
-
-                const price = result.regularMarketPrice || 0;
-                
-                // คำนวณค่าต่างๆ จากข้อมูล v7
-                const yieldVal = result.trailingAnnualDividendYield ? (result.trailingAnnualDividendYield * 100).toFixed(2) + "%" : "N/A";
-                const divRate = result.trailingAnnualDividendRate ? `${result.trailingAnnualDividendRate.toFixed(2)} ฿` : "N/A";
-                
-                let xdDateText = "N/A";
-                if (result.dividendDate) {
-                    xdDateText = new Date(result.dividendDate * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-                }
-
-                const pe = result.trailingPE ? result.trailingPE.toFixed(2) : "N/A";
-                const pbv = result.priceToBook ? result.priceToBook.toFixed(2) : "N/A";
-                const eps = result.epsTrailingTwelveMonths ? `${result.epsTrailingTwelveMonths.toFixed(2)} ฿` : "N/A";
-                
-                const high52 = result.fiftyTwoWeekHigh ? result.fiftyTwoWeekHigh.toFixed(2) : "N/A";
-                const low52 = result.fiftyTwoWeekLow ? result.fiftyTwoWeekLow.toFixed(2) : "N/A";
-
-                // การ์ดใบที่ 1: Valuation & งบการเงิน
+                // การ์ดใบที่ 1: Valuation
                 const card1 = {
                     title: `Valuation (${name.toUpperCase()})`,
                     headerBgColor: "#5E35B1",
@@ -163,7 +174,6 @@
                     items: [
                         { label: "ราคาปัจจุบัน :", value: `${price.toFixed(2)} ฿`, color: "#333333", size: "xl" },
                         { label: "P/E Ratio :", value: pe, color: "#1DB446", size: "xl" },
-                        { label: "P/BV Ratio :", value: pbv, color: "#666666", size: "md" },
                         { label: "กำไร/หุ้น (EPS) :", value: eps, color: "#666666", size: "md" }
                     ],
                     footer: "ประเมินความถูกแพงและกำไรของธุรกิจ"
@@ -176,11 +186,10 @@
                     headerFontColor: "#FFFFFF",
                     items: [
                         { label: "% ปันผล (Yield) :", value: yieldVal, color: "#1DB446", size: "xl" },
-                        { label: "ปันผลสะสม/ปี :", value: divRate, color: "#333333", size: "md" },
-                        { label: "วันจ่ายปันผล :", value: xdDateText, color: "#666666", size: "md" },
-                        { label: "กรอบราคา 52w :", value: `${low52} - ${high52}`, color: "#666666", size: "xs" }
+                        { label: "กรอบราคา 52w :", value: range52, color: "#666666", size: "md" },
+                        { label: "สถานะ :", value: yieldVal !== "N/A" ? "พบข้อมูลพื้นฐาน" : "ไม่พบข้อมูลสถิติ", color: "#0288D1", size: "xs" }
                     ],
-                    footer: "ข้อมูลอ้างอิงจาก Yahoo Finance"
+                    footer: "ราคาจาก Yahoo / สถิติจาก Google"
                 };
 
                 return [card1, card2];
@@ -190,7 +199,7 @@
                     title: `ไม่พบข้อมูล ${name.toUpperCase()}`, 
                     headerBgColor: "#FF334B", 
                     headerFontColor: "#FFFFFF", 
-                    items: [{ label: "สถานะ :", value: "ดึงข้อมูลสถิติล้มเหลว", color: "#FF334B", size: "xs" }], 
+                    items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลสถิติล้มเหลว", color: "#FF334B", size: "xs" }], 
                     footer: "-" 
                 }];
             }
