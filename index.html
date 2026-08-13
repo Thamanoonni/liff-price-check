@@ -85,10 +85,15 @@
                     const symbol = name.toUpperCase();
                     
                     // 🚨 สำคัญ: นำลิงก์ URL จาก Google Apps Script มาเปลี่ยนตรงนี้ 🚨
+                    //const gasUrl = `https://script.google.com/macros/s/AKfycbydHpb-zOdY6KXkf7nDJNZMAZ4_upKWQzrUbs0K41lj2FX9NT7mfdjbQ1t94SL_fA7j/exec?symbol=${symbol}`;
+                    
+                    // ลิงก์ Google Apps Script ของคุณ
                     const gasUrl = `https://script.google.com/macros/s/AKfycbydHpb-zOdY6KXkf7nDJNZMAZ4_upKWQzrUbs0K41lj2FX9NT7mfdjbQ1t94SL_fA7j/exec?symbol=${symbol}`;
                     
-                    // เพิ่ม { redirect: "follow" } เพื่อให้มันตามลิงก์ที่ Google ชิ่งไปมา
-                    const response = await fetch(gasUrl, { redirect: "follow" });
+                    // ใช้ Proxy เป็นคนกลางไปดึงข้อมูลจาก Google มาให้ เพื่อหลบระบบ Block ของเบราว์เซอร์ LINE
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(gasUrl)}`;
+                                        
+                    const response = await fetch(proxyUrl);
                     const data = await response.json();
                     
                     if (data.status !== "success") throw new Error(data.message);
