@@ -18,7 +18,8 @@
         
         <div class="form-group">
             <label><input type="radio" name="assetType" value="gold" checked onclick="toggleInput()"> ราคาทองคำ</label><br>
-            <label><input type="radio" name="assetType" value="stock" onclick="toggleInput()"> ราคาหุ้น</label>
+            <label><input type="radio" name="assetType" value="stock" onclick="toggleInput()"> ราคาหุ้นรายตัว</label><br>
+            <label><input type="radio" name="assetType" value="portfolio" onclick="toggleInput()"> เช็คหุ้นทั้งพอร์ต</label>
         </div>
 
         <div class="form-group" id="stockInputGroup" style="display: none;">
@@ -38,6 +39,9 @@
 
     <script>
         const LIFF_ID = "2011085564-YWiDl1zG"; 
+        
+        // รายชื่อหุ้นในพอร์ต (สามารถเพิ่ม/ลด ได้ตามต้องการ)
+        const myPortfolio = ["SCB", "TISCO", "BAM", "AP"];
 
         async function initializeLiff() {
             try {
@@ -51,10 +55,12 @@
         }
 
         function toggleInput() {
-            const isStock = document.querySelector('input[name="assetType"]:checked').value === 'stock';
-            document.getElementById('stockInputGroup').style.display = isStock ? 'block' : 'none';
+            const type = document.querySelector('input[name="assetType"]:checked').value;
+            // แสดงช่องพิมพ์ชื่อหุ้น เฉพาะตอนเลือก "ราคาหุ้นรายตัว" เท่านั้น
+            document.getElementById('stockInputGroup').style.display = (type === 'stock') ? 'block' : 'none';
         }
 
+        // ฟังก์ชันดึงข้อมูลราคา (รองรับทั้งทองและหุ้น)
         async function fetchPriceData(type, name) {
             if (type === 'gold') {
                 try {
@@ -64,7 +70,6 @@
                     const goldBuy = data.response.price.gold_bar.buy;
                     const goldSell = data.response.price.gold_bar.sell;
                     const apiTime = data.response.update_time.replace('เวลา', '').trim();
-                    
                     const currentDate = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
                     
                     return { 
@@ -81,12 +86,9 @@
                     return { title: "ราคาทองคำแท่ง", headerBgColor: "#FF334B", headerFontColor: "#FFFFFF", items: [{ label: "สถานะ :", value: "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "md" }], footer: "-" };
                 }
             } else {
-                // วิ่งตรงหา Yahoo API v8 โดยใช้ corsproxy.io เพื่อทะลุการบล็อกของ LINE
                 try {
                     const symbol = name.toUpperCase() + '.BK';
                     const targetUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}`;
-                    
-                    // เปลี่ยนมาใช้ Proxy ตัวใหม่ที่เสถียรกว่าและไม่ติด Redirect
                     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
                     
                     const response = await fetch(proxyUrl);
@@ -120,29 +122,19 @@
                         footer: "-"
                     };
                 } catch (error) {
-                    alert("แจ้งเตือน Error: " + error.message);
                     return { 
                         title: `ไม่พบหุ้น ${name.toUpperCase()}`, 
                         headerBgColor: "#FF334B", 
                         headerFontColor: "#FFFFFF", 
-                        items: [{ label: "สถานะ :", value: error.message || "ดึงข้อมูลล้มเหลว", color: "#FF334B", size: "xs" }], 
+                        items: [{ label: "สถานะ :", value: "ขัดข้อง/ไม่มีข้อมูล", color: "#FF334B", size: "xs" }], 
                         footer: "-" 
                     };
                 }
             }
         }
 
-        async function sendFlexMessage() {
-            const type = document.querySelector('input[name="assetType"]:checked').value;
-            const stockName = document.getElementById('stockName').value;
-
-            if (type === 'stock' && !stockName) {
-                alert("กรุณาใส่ชื่อหุ้น");
-                return;
-            }
-
-            const data = await fetchPriceData(type, stockName);
-
+        // ฟังก์ชันช่วยสร้างกล่อง Bubble แต่ละใบ (ใช้ซ้ำได้ทั้งเดี่ยวและ Carousel)
+        function createFlexBubble(data) {
             const bodyContents = data.items.map(item => ({
                 type: "box",
                 layout: "horizontal",
@@ -157,27 +149,58 @@
                 bodyContents.push({ type: "text", text: data.footer, size: "xs", color: "#999999", margin: "xl", wrap: true });
             }
 
-            const flexJson = {
-                type: "flex",
-                altText: `รายงาน${data.title}`,
-                contents: {
-                    type: "bubble",
-                    header: {
-                        type: "box",
-                        layout: "vertical",
-                        backgroundColor: data.headerBgColor,
-                        paddingAll: "lg",
-                        contents: [
-                            { type: "text", text: data.title, weight: "bold", size: "xl", color: data.headerFontColor }
-                        ]
-                    },
-                    body: {
-                        type: "box",
-                        layout: "vertical",
-                        contents: bodyContents
-                    }
+            return {
+                type: "bubble",
+                size: "mega", // กำหนดขนาดมาตรฐานให้ไถลื่นๆ ใน Carousel
+                header: {
+                    type: "box",
+                    layout: "vertical",
+                    backgroundColor: data.headerBgColor,
+                    paddingAll: "lg",
+                    contents: [
+                        { type: "text", text: data.title, weight: "bold", size: "xl", color: data.headerFontColor }
+                    ]
+                },
+                body: {
+                    type: "box",
+                    layout: "vertical",
+                    contents: bodyContents
                 }
             };
+        }
+
+        async function sendFlexMessage() {
+            const type = document.querySelector('input[name="assetType"]:checked').value;
+            const stockName = document.getElementById('stockName').value;
+
+            let flexJson = { type: "flex", altText: "รายงานราคา", contents: {} };
+
+            if (type === 'gold' || type === 'stock') {
+                // กรณีเลือก ทอง หรือ หุ้นตัวเดียว (Bubble แบบเดิม)
+                if (type === 'stock' && !stockName) {
+                    alert("กรุณาใส่ชื่อหุ้น");
+                    return;
+                }
+                const data = await fetchPriceData(type, stockName);
+                flexJson.altText = `รายงาน${data.title}`;
+                flexJson.contents = createFlexBubble(data);
+
+            } else if (type === 'portfolio') {
+                // กรณีเลือก หุ้นทั้งพอร์ต (Carousel)
+                flexJson.altText = "รายงานราคาพอร์ตลงทุน";
+                
+                // ใช้ Promise.all เพื่อดึงข้อมูลหุ้นทุกตัวในพอร์ตพร้อมๆ กัน (เร็วขึ้น)
+                const promises = myPortfolio.map(symbol => fetchPriceData('stock', symbol));
+                const results = await Promise.all(promises);
+                
+                // นำผลลัพธ์ที่ได้มาสร้างเป็นกล่อง Bubble หลายๆ ใบ
+                const bubbles = results.map(data => createFlexBubble(data));
+                
+                flexJson.contents = {
+                    type: "carousel",
+                    contents: bubbles
+                };
+            }
 
             try {
                 if (liff.isInClient()) {
